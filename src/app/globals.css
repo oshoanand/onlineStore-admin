@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@theme {
+  /* Default Theme Variables */
+  --color-background: hsl(220 17% 95%);
+  --color-foreground: hsl(231 20% 27%);
+
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(231 20% 27%);
+
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(231 20% 27%);
+
+  --color-primary: hsl(231 48% 48%);
+  --color-primary-foreground: hsl(0 0% 98%);
+
+  --color-secondary: hsl(220 13% 91%);
+  --color-secondary-foreground: hsl(0 0% 9%);
+
+  --color-muted: hsl(220 13% 91%);
+  --color-muted-foreground: hsl(0 0% 45.1%);
+
+  --color-accent: hsl(36 100% 50%);
+  --color-accent-foreground: hsl(0 0% 9%);
+
+  --color-destructive: hsl(0 84.2% 60.2%);
+  --color-destructive-foreground: hsl(0 0% 98%);
+
+  --color-border: hsl(0 0% 89.8%);
+  --color-input: hsl(0 0% 100%);
+  --color-ring: hsl(231 48% 48%);
+
+  --color-chart-1: hsl(231 48% 48%);
+  --color-chart-2: hsl(36 100% 50%);
+  --color-chart-3: hsl(197 37% 24%);
+  --color-chart-4: hsl(43 74% 66%);
+  --color-chart-5: hsl(27 87% 67%);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-default: 0.5rem;
+
+  /* Sidebar Specific Colors */
+  --color-sidebar-background: hsl(0 0% 100%);
+  --color-sidebar-foreground: hsl(240 5.3% 26.1%);
+  --color-sidebar-primary: hsl(231 48% 48%);
+  --color-sidebar-primary-foreground: hsl(0 0% 98%);
+  --color-sidebar-accent: hsl(25 95% 53%);
+  --color-sidebar-accent-foreground: hsl(0 0% 100%);
+  --color-sidebar-border: hsl(220 13% 91%);
+  --color-sidebar-ring: hsl(231 48% 48%);
+}
+
+/* Dark Mode Values */
+.dark {
+  --color-background: hsl(231 20% 11%);
+  --color-foreground: hsl(0 0% 98%);
+  --color-card: hsl(231 20% 15%);
+  --color-card-foreground: hsl(0 0% 98%);
+  --color-popover: hsl(231 20% 11%);
+  --color-popover-foreground: hsl(0 0% 98%);
+  --color-primary: hsl(231 48% 60%);
+  --color-primary-foreground: hsl(0 0% 9%);
+  --color-secondary: hsl(231 20% 20%);
+  --color-secondary-foreground: hsl(0 0% 98%);
+  --color-muted: hsl(231 20% 20%);
+  --color-muted-foreground: hsl(0 0% 63.9%);
+  --color-accent: hsl(36 100% 55%);
+  --color-accent-foreground: hsl(0 0% 9%);
+  --color-destructive: hsl(0 62.8% 30.6%);
+  --color-destructive-foreground: hsl(0 0% 98%);
+  --color-border: hsl(231 20% 20%);
+  --color-input: hsl(231 20% 20%);
+  --color-ring: hsl(231 48% 60%);
+
+  --color-sidebar-background: hsl(231 20% 13%);
+  --color-sidebar-foreground: hsl(240 4.8% 95.9%);
+  --color-sidebar-primary: hsl(231 48% 60%);
+  --color-sidebar-primary-foreground: hsl(0 0% 100%);
+  --color-sidebar-border: hsl(231 20% 20%);
+  --color-sidebar-ring: hsl(231 48% 60%);
+
+  /* 1. Border Radius */
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  /* 2. Animations */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  /* 3. Keyframes */
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+}
+
+/* Base Styles */
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom Utilities */
+@utility sidebar-hover-bg {
+  @apply hover:bg-sidebar-accent/90;
+}
