@@ -11,7 +11,10 @@ import {
   Upload,
   X,
   Loader2,
-  AlertCircle,
+  Tags,
+  Plus,
+  ExternalLink,
+  CornerDownRight,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -33,18 +36,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import TiptapEditor from "@/components/tiptap-editor";
 import { useToast } from "@/hooks/use-toast";
 
-import { useProduct, useUpdateProduct } from "@/services/product";
-import { useCategories } from "@/services/category";
-import { CategoryManagerDialog } from "../../components/category-manager";
+import { useProductById, useUpdateProduct } from "@/services/product";
+import { useAdminCategories } from "@/services/category";
 import { getImageUrl } from "@/utils/image";
 
 // ==========================================
-// 1. TRANSLITERATION FUNCTION (RUS -> LAT)
+// 1. TRANSLITERATION FUNCTION (RU -> EN)
 // ==========================================
-const transliterate = (text: string) => {
+export const transliterate = (text: string) => {
   const cyrillicToLatinMap: Record<string, string> = {
     а: "a",
     б: "b",
@@ -125,10 +128,20 @@ const productSchema = z.object({
   color: z.string().optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "OUT_OF_STOCK", "ARCHIVED"]),
   isPublished: z.boolean(),
+
+  tags: z.array(z.string()).default([]),
 });
 
 type ProductFormInput = z.input<typeof productSchema>;
 type ProductFormOutput = z.output<typeof productSchema>;
+
+const PRESET_TAGS = [
+  "Хит продаж",
+  "Новинка",
+  "Скидка",
+  "Рекомендуем",
+  "Эксклюзив",
+];
 
 export default function EditProductPage() {
   const router = useRouter();
@@ -142,16 +155,19 @@ export default function EditProductPage() {
   const [existingThumb, setExistingThumb] = useState<string | null>(null);
   const [existingImages, setExistingImages] = useState<string[]>([]);
 
-  const [isSlugAuto, setIsSlugAuto] = useState(true);
+  const [isSlugAuto, setIsSlugAuto] = useState(false); // Usually false on Edit
+  const [tagInput, setTagInput] = useState("");
 
-  // Lock state to prevent race conditions during async data fetching
+  // 🚨 NEW: Deep Cascading Path State
+  const [categoryPath, setCategoryPath] = useState<string[]>([]);
   const [isFormInitialized, setIsFormInitialized] = useState(false);
 
   // API Hooks
   const { data: productResponse, isLoading: isLoadingProduct } =
-    useProduct(productId);
+    useProductById(productId);
   const { mutate: updateProduct, isPending } = useUpdateProduct();
-  const { data: categoryResponse, isLoading: isLoadingCats } = useCategories();
+  const { data: categoryResponse, isLoading: isLoadingCats } =
+    useAdminCategories();
 
   const product = productResponse?.data;
   const allCategories = categoryResponse?.data || [];
@@ -174,32 +190,41 @@ export default function EditProductPage() {
       color: "",
       status: "ACTIVE",
       isPublished: true,
+      tags: [],
     },
   });
 
   const name = form.watch("name");
-  const currentCategoryId = form.watch("categoryId");
+  const currentTags = form.watch("tags") || [];
 
   // ==========================================
-  // 3. BULLETPROOF PRE-FILL LOGIC
+  // 3. INTELLIGENT PRE-FILL & PATH TRACING
   // ==========================================
   useEffect(() => {
-    // 🚨 STRICT BLOCK: Do not run until BOTH APIs have completely finished loading
-    if (isLoadingProduct || isLoadingCats) return;
+    if (isLoadingProduct || isLoadingCats || !allCategories.length) return;
 
     if (product && !isFormInitialized) {
-      let rootId = "";
-      let subId = "none"; // Default to "none" for Shadcn Select compatibility
+      let reconstructedPath: string[] = [];
 
-      // Prisma returns full objects via `include: { categories: true }`
-      if (Array.isArray(product.categories)) {
-        const rootCat = product.categories.find(
-          (c: any) => c.parentId === null,
+      if (Array.isArray(product.categories) && product.categories.length > 0) {
+        // Find the deepest leaf node connected to this product
+        // A leaf node is a category that does NOT act as a parent to any other connected category
+        let leafCat = product.categories.find(
+          (c: any) =>
+            !product.categories.some((other: any) => other.parentId === c.id),
         );
-        const subCat = product.categories.find((c: any) => c.parentId !== null);
 
-        if (rootCat) rootId = rootCat.id;
-        if (subCat) subId = subCat.id;
+        if (!leafCat) leafCat = product.categories[0]; // Fallback
+
+        // Trace up to the root using the allCategories master list
+        let currentId = leafCat?.id;
+        while (currentId) {
+          reconstructedPath.unshift(currentId); // Add to the front to build [root, ... , leaf]
+          const catObj = allCategories.find((c: any) => c.id === currentId);
+          currentId = catObj?.parentId || null;
+        }
+
+        setCategoryPath(reconstructedPath);
       }
 
       form.reset({
@@ -211,25 +236,34 @@ export default function EditProductPage() {
         price: product.price || 0,
         discountedPrice: product.discountedPrice || undefined,
         inStock: product.inStock || 0,
-        categoryId: rootId,
-        subCategoryId: subId,
+        categoryId: reconstructedPath[0] || "",
+        subCategoryId:
+          reconstructedPath.length > 1
+            ? reconstructedPath[reconstructedPath.length - 1]
+            : "none",
         weight: product.weight || "",
         dimensions: product.dimensions || "",
         color: product.color || "",
         status: product.status || "ACTIVE",
         isPublished: product.isPublished ?? true,
+        tags: product.tags || [],
       });
 
       setExistingThumb(product.thumbImage || null);
       setExistingImages(product.imageArray || []);
-
-      // Lock initialization so background refetches don't wipe out user inputs
       setIsFormInitialized(true);
     }
-  }, [product, isLoadingProduct, isLoadingCats, isFormInitialized, form]);
+  }, [
+    product,
+    isLoadingProduct,
+    isLoadingCats,
+    allCategories,
+    isFormInitialized,
+    form,
+  ]);
 
   // ==========================================
-  // 4. AUTO-SLUG GENERATION
+  // 4. AUTO-SLUG & DEEP CASCADING LOGIC
   // ==========================================
   useEffect(() => {
     if (
@@ -245,21 +279,79 @@ export default function EditProductPage() {
 
   const { onChange: onSlugChange, ...slugFieldRest } = form.register("slug");
 
+  // Dynamically compute how many dropdown levels to show
+  const cascadingLevels = [];
+  let currentParentId: string | null = null;
+
+  for (let i = 0; i <= categoryPath.length; i++) {
+    const options = allCategories.filter(
+      (c: any) => c.parentId === currentParentId,
+    );
+    if (options.length === 0) break; // Reached a leaf node
+
+    cascadingLevels.push({
+      level: i,
+      options,
+      selectedValue: categoryPath[i] || "none",
+    });
+
+    currentParentId = categoryPath[i];
+    if (!currentParentId || currentParentId === "none") break;
+  }
+
+  const handleCategoryChange = (level: number, val: string) => {
+    let newPath;
+    if (val === "none") {
+      newPath = categoryPath.slice(0, level); // Trim back
+    } else {
+      newPath = [...categoryPath.slice(0, level), val]; // Append selected
+    }
+    setCategoryPath(newPath);
+
+    // Sync with React Hook Form
+    form.setValue("categoryId", newPath[0] || "", { shouldValidate: true });
+    form.setValue(
+      "subCategoryId",
+      newPath.length > 1 ? newPath[newPath.length - 1] : "none",
+    );
+  };
+
   // ==========================================
-  // 5. FORM SUBMISSION
+  // 5. TAGS & FORM SUBMISSION
   // ==========================================
+  const handleAddTag = (tag: string) => {
+    const cleanTag = tag.trim();
+    if (cleanTag && !currentTags.includes(cleanTag)) {
+      form.setValue("tags", [...currentTags, cleanTag], {
+        shouldValidate: true,
+      });
+    }
+    setTagInput("");
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    form.setValue(
+      "tags",
+      currentTags.filter((t) => t !== tagToRemove),
+      { shouldValidate: true },
+    );
+  };
+
   const onSubmit = async (values: ProductFormOutput) => {
     const formData = new FormData();
 
     Object.entries(values).forEach(([key, value]) => {
       if (value !== undefined && value !== "" && value !== "none") {
-        formData.append(key, String(value));
+        if (key === "tags") {
+          formData.append(key, JSON.stringify(value));
+        } else {
+          formData.append(key, String(value));
+        }
       }
     });
 
     if (thumb) formData.append("thumbImage", thumb);
     images.forEach((img) => formData.append("imageArray", img));
-
     formData.append("existingImages", JSON.stringify(existingImages));
 
     updateProduct(
@@ -299,64 +391,73 @@ export default function EditProductPage() {
   return (
     <form
       onSubmit={form.handleSubmit(onSubmit)}
-      className="space-y-8 pb-20 animate-in fade-in duration-500"
+      className="space-y-8 pb-20 animate-in fade-in duration-500 relative"
     >
-      {/* HEADER */}
-      <div className="flex items-center justify-between sticky top-0 z-20 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl py-4 border-b border-slate-200 dark:border-slate-800">
+      {/* ==========================================
+          STICKY TOOLBAR
+      ========================================== */}
+      <div className="sticky top-0 z-40 flex items-center justify-between bg-slate-50/90 dark:bg-slate-950/90 backdrop-blur-md py-4 mb-6 border-b border-slate-200 dark:border-slate-800 shadow-sm -mt-4 sm:-mt-6 lg:-mt-8 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-4">
           <Button
             variant="outline"
             size="icon"
             onClick={() => router.back()}
             type="button"
+            className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              Редактировать товар
-            </h1>
-          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            Редактировать товар
+          </h1>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Button
             variant="ghost"
             type="button"
             onClick={() => router.back()}
             disabled={isPending}
+            className="hidden sm:inline-flex"
           >
             Отмена
           </Button>
           <Button
             type="submit"
             disabled={isPending}
-            className="shadow-md bg-blue-600 hover:bg-blue-700 text-white"
+            className="shadow-md bg-blue-600 hover:bg-blue-700 text-white font-medium"
           >
             {isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Save className="mr-2 h-4 w-4" />
             )}
-            Сохранить изменения
+            <span className="hidden sm:inline">Сохранить изменения</span>
+            <span className="sm:hidden">Сохранить</span>
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* LEFT COLUMN */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 px-1">
+        {/* ==========================================
+            LEFT COLUMN (Main Specs)
+        ========================================== */}
         <div className="lg:col-span-2 space-y-6">
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle>Основная информация</CardTitle>
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-lg">Основная информация</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-5">
+            <CardContent className="space-y-6 pt-6">
               <div className="grid gap-2">
                 <Label htmlFor="name">
                   Название товара <span className="text-red-500">*</span>
                 </Label>
-                <Input id="name" {...form.register("name")} />
+                <Input
+                  id="name"
+                  {...form.register("name")}
+                  className={`transition-all ${form.formState.errors.name ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                />
                 {form.formState.errors.name && (
-                  <p className="text-xs text-red-500">
+                  <p className="text-xs text-red-500 font-medium">
                     {form.formState.errors.name.message}
                   </p>
                 )}
@@ -375,8 +476,11 @@ export default function EditProductPage() {
                       onSlugChange(e);
                     }}
                   />
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Можно редактировать вручную
+                  </p>
                   {form.formState.errors.slug && (
-                    <p className="text-xs text-red-500">
+                    <p className="text-xs text-red-500 font-medium">
                       {form.formState.errors.slug.message}
                     </p>
                   )}
@@ -387,84 +491,83 @@ export default function EditProductPage() {
                   </Label>
                   <Input id="sku" {...form.register("sku")} />
                   {form.formState.errors.sku && (
-                    <p className="text-xs text-red-500">
+                    <p className="text-xs text-red-500 font-medium">
                       {form.formState.errors.sku.message}
                     </p>
                   )}
                 </div>
               </div>
 
-              {/* CATEGORIES WITH CONTROLLER */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50">
-                <div className="grid gap-2">
-                  <Label>
-                    Главная категория <span className="text-red-500">*</span>
+              {/* 🚨 DEEP CASCADING CATEGORIES UI */}
+              <div className="border border-slate-200 dark:border-slate-800 p-5 rounded-xl bg-slate-50 dark:bg-slate-900/50 relative space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-sm font-semibold">
+                    Категория <span className="text-red-500">*</span>
                   </Label>
-                  <Controller
-                    control={form.control}
-                    name="categoryId"
-                    render={({ field }) => (
-                      <Select
-                        onValueChange={(val) => {
-                          field.onChange(val);
-                          form.setValue("subCategoryId", "none"); // Reset subcategory when main changes
-                        }}
-                        value={field.value || undefined}
-                      >
-                        <SelectTrigger className="bg-white dark:bg-slate-950">
-                          <SelectValue placeholder="Выберите категорию" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {allCategories
-                            .filter((c) => !c.parentId)
-                            .map((cat) => (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    type="button"
+                    className="text-blue-600 hover:text-blue-800 h-auto p-0 font-medium"
+                    onClick={() => router.push("/categories")}
+                  >
+                    Настройки <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                  </Button>
+                </div>
+
+                <div className="space-y-3">
+                  {cascadingLevels.map((levelData) => (
+                    <div
+                      key={levelData.level}
+                      className="relative flex items-center"
+                    >
+                      {levelData.level > 0 && (
+                        <CornerDownRight className="h-4 w-4 text-slate-400 mr-2 shrink-0 opacity-70" />
+                      )}
+
+                      <div className="flex-1">
+                        <Select
+                          value={levelData.selectedValue}
+                          onValueChange={(val) =>
+                            handleCategoryChange(levelData.level, val)
+                          }
+                        >
+                          <SelectTrigger
+                            className={`bg-white dark:bg-slate-950 shadow-sm ${levelData.level === 0 && form.formState.errors.categoryId ? "border-red-500" : "border-slate-200 dark:border-slate-800"}`}
+                          >
+                            <SelectValue
+                              placeholder={
+                                levelData.level === 0
+                                  ? "Выберите главную категорию"
+                                  : "Выберите подкатегорию (необязательно)"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {levelData.level > 0 && (
+                              <SelectItem
+                                value="none"
+                                className="text-slate-400 italic"
+                              >
+                                -- Остановиться на этом уровне --
+                              </SelectItem>
+                            )}
+                            {levelData.options.map((cat: any) => (
                               <SelectItem key={cat.id} value={cat.id}>
                                 {cat.name}
                               </SelectItem>
                             ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ))}
+
                   {form.formState.errors.categoryId && (
-                    <p className="text-xs text-red-500">
+                    <p className="text-xs text-red-500 font-medium mt-1">
                       {form.formState.errors.categoryId.message}
                     </p>
                   )}
-                </div>
-
-                <div className="grid gap-2">
-                  <Label>Подкатегория</Label>
-                  <Controller
-                    control={form.control}
-                    name="subCategoryId"
-                    render={({ field }) => (
-                      <Select
-                        disabled={!currentCategoryId}
-                        onValueChange={field.onChange}
-                        value={field.value || "none"}
-                      >
-                        <SelectTrigger className="bg-white dark:bg-slate-950">
-                          <SelectValue placeholder="Опционально" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">
-                            -- Нет подкатегории --
-                          </SelectItem>
-                          {allCategories
-                            .filter((c) => c.parentId === currentCategoryId)
-                            .map((cat) => (
-                              <SelectItem key={cat.id} value={cat.id}>
-                                {cat.name}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                </div>
-                <div className="col-span-1 md:col-span-2">
-                  <CategoryManagerDialog />
                 </div>
               </div>
 
@@ -477,15 +580,15 @@ export default function EditProductPage() {
                   className="resize-none h-20"
                 />
                 {form.formState.errors.description && (
-                  <p className="text-xs text-red-500">
+                  <p className="text-xs text-red-500 font-medium">
                     {form.formState.errors.description.message}
                   </p>
                 )}
               </div>
 
               <div className="grid gap-2">
-                <Label>Подробное описание</Label>
-                <div className="border rounded-lg overflow-hidden min-h-[150px]">
+                <Label>Подробное описание (Rich Text)</Label>
+                <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden min-h-[200px]">
                   <TiptapEditor
                     content={form.watch("detailedDescription") || ""}
                     onChange={(html) =>
@@ -498,77 +601,73 @@ export default function EditProductPage() {
           </Card>
 
           {/* MEDIA GALLERY */}
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle>Галерея медиа</CardTitle>
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-lg">Галерея медиа</CardTitle>
               <CardDescription>
                 Загрузите новые изображения для замены существующих.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-6 pt-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* MAIN THUMBNAIL */}
                 <div className="space-y-3">
                   <Label>Главное изображение (Миниатюра)</Label>
-                  <div className="border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors relative min-h-[200px]">
+                  <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors relative min-h-[200px]">
                     {thumb || existingThumb ? (
                       <div className="relative w-full h-40">
                         <img
                           src={
                             thumb
                               ? URL.createObjectURL(thumb)
-                              : getImageUrl(existingThumb)
+                              : getImageUrl(existingThumb!)
                           }
                           className="w-full h-full object-contain rounded-md"
                           alt="Thumb"
                         />
-                        {thumb && (
-                          <Button
-                            size="icon"
-                            variant="destructive"
-                            className="absolute -top-2 -right-2 h-7 w-7 rounded-full shadow-md"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              setThumb(null);
-                            }}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
+                        <Button
+                          size="icon"
+                          variant="destructive"
+                          className="absolute -top-2 -right-2 h-7 w-7 rounded-full shadow-md"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setThumb(null);
+                            setExistingThumb(null);
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
                       </div>
                     ) : (
-                      <div className="text-center text-muted-foreground">
-                        Нет фото
-                      </div>
-                    )}
-                    <input
-                      type="file"
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                      onChange={(e) => setThumb(e.target.files?.[0] || null)}
-                      accept="image/*"
-                    />
-                    {!thumb && (
-                      <div className="absolute bottom-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                        Нажмите, чтобы заменить
-                      </div>
+                      <>
+                        <input
+                          type="file"
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                          onChange={(e) =>
+                            setThumb(e.target.files?.[0] || null)
+                          }
+                          accept="image/*"
+                        />
+                        <Upload className="h-10 w-10 text-slate-400 mb-3" />
+                        <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                          Загрузить главное фото
+                        </span>
+                        <span className="text-xs text-slate-400 mt-1">
+                          PNG, JPG до 5MB
+                        </span>
+                      </>
                     )}
                   </div>
                 </div>
 
-                {/* GALLERY IMAGES */}
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label>Изображения галереи (Макс. 4)</Label>
-                  </div>
-
+                  <Label>Изображения галереи (Макс. 4)</Label>
                   <div className="grid grid-cols-2 gap-3">
-                    {/* Combine existing images and newly uploaded files into one array for display */}
                     {[...existingImages, ...images]
                       .slice(0, 4)
                       .map((img, idx) => (
                         <div
                           key={idx}
-                          className="relative aspect-square border rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-900"
+                          className="relative aspect-square border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-900"
                         >
                           <img
                             src={
@@ -579,18 +678,15 @@ export default function EditProductPage() {
                             className="w-full h-full object-cover"
                             alt="gallery"
                           />
-                          {/* Always show the delete button */}
                           <button
                             type="button"
                             onClick={(e) => {
                               e.preventDefault();
                               if (typeof img === "string") {
-                                // Remove from existing images
                                 setExistingImages((prev) =>
                                   prev.filter((url) => url !== img),
                                 );
                               } else {
-                                // Remove from newly uploaded files
                                 setImages((prev) =>
                                   prev.filter((f) => f !== img),
                                 );
@@ -603,16 +699,14 @@ export default function EditProductPage() {
                         </div>
                       ))}
 
-                    {/* Upload new images button (hides if total is 4 or more) */}
                     {existingImages.length + images.length < 4 && (
-                      <div className="aspect-square border-2 border-dashed rounded-lg flex flex-col items-center justify-center relative cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                      <div className="aspect-square border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg flex flex-col items-center justify-center relative cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/50">
                         <input
                           type="file"
                           multiple
                           className="absolute inset-0 opacity-0 cursor-pointer"
                           onChange={(e) => {
                             const files = Array.from(e.target.files || []);
-                            // Only add up to the remaining slots
                             const slotsLeft =
                               4 - (existingImages.length + images.length);
                             setImages((prev) =>
@@ -636,18 +730,101 @@ export default function EditProductPage() {
           </Card>
         </div>
 
-        {/* RIGHT COLUMN */}
+        {/* ==========================================
+            RIGHT COLUMN (Tags, Pricing, Meta)
+        ========================================== */}
         <div className="space-y-6">
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle>Статус и Цены</CardTitle>
+          {/* TAGS MANAGEMENT */}
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Tags className="h-4 w-4 text-blue-600" />
+                Теги (Группы на главной)
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="flex items-center justify-between p-4 border rounded-xl bg-slate-50 dark:bg-slate-900/50">
+            <CardContent className="pt-5 space-y-5">
+              <div className="flex flex-wrap gap-2">
+                {PRESET_TAGS.map((tag) => {
+                  const isSelected = currentTags.includes(tag);
+                  return (
+                    <Badge
+                      key={tag}
+                      variant={isSelected ? "default" : "outline"}
+                      className={`cursor-pointer transition-all border-slate-200 dark:border-slate-700 ${isSelected ? "bg-blue-600 hover:bg-blue-700 text-white border-transparent" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}
+                      onClick={() =>
+                        isSelected ? handleRemoveTag(tag) : handleAddTag(tag)
+                      }
+                    >
+                      {tag}{" "}
+                      {isSelected ? (
+                        <X className="ml-1 h-3 w-3" />
+                      ) : (
+                        <Plus className="ml-1 h-3 w-3 text-slate-400" />
+                      )}
+                    </Badge>
+                  );
+                })}
+              </div>
+
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Свой тег..."
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddTag(tagInput);
+                    }
+                  }}
+                  className="text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => handleAddTag(tagInput)}
+                >
+                  Добавить
+                </Button>
+              </div>
+
+              {currentTags.filter((t) => !PRESET_TAGS.includes(t)).length >
+                0 && (
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
+                  <span className="text-xs text-slate-500 w-full mb-1 font-medium">
+                    Свои теги:
+                  </span>
+                  {currentTags
+                    .filter((t) => !PRESET_TAGS.includes(t))
+                    .map((tag) => (
+                      <Badge
+                        key={tag}
+                        className="bg-slate-700 hover:bg-slate-800 text-white pr-1.5 flex items-center gap-1 transition-colors"
+                      >
+                        {tag}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTag(tag)}
+                          className="rounded-full hover:bg-slate-500 p-0.5 transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* STATUS & PRICING */}
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-base">Статус и Цены</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5 pt-5">
+              <div className="flex items-center justify-between p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-900/50">
                 <div className="space-y-0.5">
-                  <Label className="text-base font-semibold">
-                    Опубликовано
-                  </Label>
+                  <Label className="text-sm font-semibold">Опубликовано</Label>
                   <p className="text-[11px] text-muted-foreground">
                     Показывать товар клиентам
                   </p>
@@ -694,9 +871,10 @@ export default function EditProductPage() {
                     type="number"
                     step="0.01"
                     {...form.register("price")}
+                    placeholder="0.00"
                   />
                   {form.formState.errors.price && (
-                    <p className="text-xs text-red-500">
+                    <p className="text-xs text-red-500 font-medium">
                       {form.formState.errors.price.message}
                     </p>
                   )}
@@ -707,18 +885,23 @@ export default function EditProductPage() {
                     type="number"
                     step="0.01"
                     {...form.register("discountedPrice")}
+                    placeholder="0.00"
                   />
                 </div>
               </div>
 
-              <div className="grid gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="grid gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
                 <Label>
                   Остаток на складе (шт.){" "}
                   <span className="text-red-500">*</span>
                 </Label>
-                <Input type="number" {...form.register("inStock")} />
+                <Input
+                  type="number"
+                  {...form.register("inStock")}
+                  placeholder="0"
+                />
                 {form.formState.errors.inStock && (
-                  <p className="text-xs text-red-500">
+                  <p className="text-xs text-red-500 font-medium">
                     {form.formState.errors.inStock.message}
                   </p>
                 )}
@@ -726,29 +909,36 @@ export default function EditProductPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-none shadow-sm bg-indigo-50/50 dark:bg-indigo-900/10">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm uppercase tracking-wider text-indigo-700 dark:text-indigo-400">
+          {/* CHARACTERISTICS */}
+          <Card className="border border-indigo-100 dark:border-indigo-900/30 shadow-sm bg-indigo-50/30 dark:bg-indigo-900/10 overflow-hidden">
+            <CardHeader className="pb-3 bg-indigo-50/80 dark:bg-indigo-900/20 border-b border-indigo-100 dark:border-indigo-900/30">
+              <CardTitle className="text-xs uppercase tracking-wider text-indigo-700 dark:text-indigo-400 font-bold">
                 Характеристики
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-4">
               <div className="grid gap-2">
-                <Label className="text-xs">Вес</Label>
+                <Label className="text-xs text-slate-600 dark:text-slate-400">
+                  Вес
+                </Label>
                 <Input
                   {...form.register("weight")}
                   className="bg-white dark:bg-slate-950"
                 />
               </div>
               <div className="grid gap-2">
-                <Label className="text-xs">Габариты (ДxШxВ)</Label>
+                <Label className="text-xs text-slate-600 dark:text-slate-400">
+                  Габариты (ДxШxВ)
+                </Label>
                 <Input
                   {...form.register("dimensions")}
                   className="bg-white dark:bg-slate-950"
                 />
               </div>
               <div className="grid gap-2">
-                <Label className="text-xs">Цвет / Окрас</Label>
+                <Label className="text-xs text-slate-600 dark:text-slate-400">
+                  Цвет / Окрас
+                </Label>
                 <Input
                   {...form.register("color")}
                   className="bg-white dark:bg-slate-950"

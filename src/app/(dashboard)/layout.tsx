@@ -41,23 +41,17 @@ export default function DashboardLayout({
       {/* ==========================================
           RIGHT SIDE: Content Area (Header + Main)
       ========================================== */}
-      {/* UI UX FIX: Changed bg-white to bg-slate-50/50. 
-        Professional dashboards use a slightly gray canvas so that white data cards stand out. 
-      */}
-      <SidebarInset className="flex flex-col flex-1 min-w-0 bg-slate-50/50 dark:bg-background transition-all">
+      {/* 🚨 FIX 1: Added 'h-screen' to isolate scrolling to the right side only */}
+      <SidebarInset className="flex flex-col flex-1 h-screen min-w-0 bg-slate-50/50 dark:bg-background transition-all">
         {/* HEADER */}
-        {/* UI UX FIX: Enhanced backdrop blur, adjusted height, and refined borders for a "glass" effect */}
-        <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center justify-between border-b border-slate-200/60 dark:border-slate-800 bg-white/70 dark:bg-background/70 px-4 sm:px-6 backdrop-blur-xl transition-all">
-          {/* Header Left: Trigger & Breadcrumbs */}
+        <header className="sticky top-0 z-50 flex h-12 shrink-0 items-center justify-between border-b border-slate-200/60 dark:border-slate-800 bg-white/70 dark:bg-background/70 px-4 sm:px-6 backdrop-blur-xl transition-all">
           <div className="flex items-center gap-3 lg:gap-4">
             <SidebarTrigger className="h-8 w-8 text-slate-500 hover:bg-transparent hover:text-orange-500 cursor-pointer" />
-
             <Separator
               orientation="vertical"
               className="h-5 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"
             />
 
-            {/* Contextual Breadcrumbs (Replaces plain text) */}
             <div className="hidden sm:flex items-center gap-1.5 text-sm font-medium text-slate-500 dark:text-slate-400">
               <span className="hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer transition-colors">
                 Platform
@@ -69,9 +63,7 @@ export default function DashboardLayout({
             </div>
           </div>
 
-          {/* Header Right: Global Search, Actions & User */}
           <div className="flex items-center gap-3 sm:gap-5">
-            {/* Global Search Bar (Modern Cmd+K style) */}
             <div className="hidden md:flex items-center gap-2 bg-slate-100/80 dark:bg-slate-800/50 hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors px-3 py-1.5 rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-text w-64 group">
               <Search className="h-4 w-4 text-slate-400 group-hover:text-slate-500 transition-colors" />
               <span className="text-sm text-slate-400 select-none flex-1">
@@ -81,12 +73,10 @@ export default function DashboardLayout({
                 <span className="text-xs">⌘</span>K
               </kbd>
             </div>
-
             <Separator
               orientation="vertical"
               className="h-5 w-px bg-slate-200 dark:bg-slate-700 hidden md:block"
             />
-
             <div className="flex items-center gap-3">
               <NotificationBell />
               <UserNav />
@@ -95,10 +85,13 @@ export default function DashboardLayout({
         </header>
 
         {/* MAIN CONTENT */}
-        {/* UI UX FIX: Wrapped children in a max-width container to ensure content remains readable on ultra-wide monitors */}
-        <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
+        {/* 🚨 FIX 2: Made <main> the scroll container. Removed padding from here so sticky elements attach exactly to the top. */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden relative">
           <Suspense fallback={<GlobalLoadingFallback />}>
-            <div className="mx-auto max-w-7xl w-full h-full">{children}</div>
+            {/* 🚨 FIX 3: Removed 'h-full'. Moved padding here. */}
+            <div className="mx-auto max-w-7xl w-full p-4 sm:p-6 lg:p-8">
+              {children}
+            </div>
           </Suspense>
         </main>
       </SidebarInset>

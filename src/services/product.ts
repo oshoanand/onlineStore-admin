@@ -13,8 +13,9 @@ export interface Product {
   id: string;
   name: string;
   slug: string;
+  sku?: string | null; // Added SKU
   description: string;
-  detailedDescription: string;
+  detailedDescription?: string | null;
   price: number;
   discountedPrice?: number | null;
   inStock: number;
@@ -23,7 +24,10 @@ export interface Product {
   weight?: string | null;
   dimensions?: string | null;
   color?: string | null;
-  categories: string[];
+  categories: any[]; // Changed to any[] because admin/all returns string[], admin/:id returns objects
+  tags: string[]; // Added tags array
+  averageRating: number;
+  reviewCount: number;
   thumbImage?: string | null;
   imageArray: string[];
   createdAt: string;
@@ -57,7 +61,7 @@ export interface PaginatedApiResponse<T> {
 // ==========================================
 export const productApi = {
   /**
-   * Fetch all products (Admin View)
+   * Fetch all products (Admin View - Paginated)
    */
   getAdminProducts: (
     params?: ProductQueryParams,
@@ -70,7 +74,6 @@ export const productApi = {
 
   /**
    * Fetch a single product by ID for the Edit Page
-   * SECURE FIX: Uses the /admin route to ensure unpublished products are retrievable by staff.
    */
   getProductById: (id: string): Promise<ApiResponse<Product>> =>
     apiRequest({
@@ -88,6 +91,9 @@ export const productApi = {
       data,
     }),
 
+  /**
+   * Update an existing product
+   */
   updateProduct: ({
     id,
     data,
@@ -103,7 +109,6 @@ export const productApi = {
 
   /**
    * Delete a product
-   * SECURE FIX: Updated URL to use /admin/ prefix.
    */
   deleteProduct: (id: string): Promise<ApiResponse<null>> =>
     apiRequest({
@@ -113,7 +118,6 @@ export const productApi = {
 
   /**
    * Update only the status (Active/Inactive) or Stock via Patch
-   * SECURE FIX: Updated URL to use /admin/ prefix.
    */
   updateProductStatus: (
     id: string,
@@ -159,6 +163,23 @@ export const useCreateProduct = () => {
   });
 };
 
+export const useUpdateProduct = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: productApi.updateProduct,
+    onSuccess: (_, variables) => {
+      // 1. Invalidate the admin product list cache
+      queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
+
+      // 2. CRITICAL: Invalidate the specific product's cache!
+      queryClient.invalidateQueries({
+        queryKey: ["admin", "product", variables.id],
+      });
+    },
+  });
+};
+
 export const useDeleteProduct = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -174,37 +195,13 @@ export const useUpdateProductStatus = () => {
   return useMutation({
     mutationFn: ({ id, status }: { id: string; status: ProductStatus }) =>
       productApi.updateProductStatus(id, status),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
-    },
-  });
-};
-
-// Update your hook:
-export const useProduct = (id: string) => {
-  return useQuery({
-    queryKey: ["product", id],
-
-    queryFn: (): Promise<ApiResponse<any>> =>
-      apiRequest({ method: "GET", url: `/products/admin/${id}` }),
-    enabled: !!id,
-  });
-};
-
-export const useUpdateProduct = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: FormData }) =>
-      apiRequest({ method: "PUT", url: `/products/admin/${id}`, data }),
-
-    // 🚨 Add `variables` to the callback parameters
     onSuccess: (_, variables) => {
-      // 1. Invalidate the admin product list cache
+      // Invalidate the list
       queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
-
-      // 2. 🚨 CRITICAL: Invalidate the specific product's cache!
-      queryClient.invalidateQueries({ queryKey: ["product", variables.id] });
+      // Invalidate the specific item being updated
+      queryClient.invalidateQueries({
+        queryKey: ["admin", "product", variables.id],
+      });
     },
   });
 };

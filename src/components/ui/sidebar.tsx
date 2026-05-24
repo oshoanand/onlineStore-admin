@@ -369,7 +369,7 @@ const SidebarHeader = React.forwardRef<
     <div
       ref={ref}
       data-sidebar="header"
-      className={cn("flex flex-col gap-2 p-2", className)}
+      className={cn("flex flex-col gap-2", className)}
       {...props}
     />
   );
@@ -449,7 +449,7 @@ const SidebarGroup = React.forwardRef<
       data-sidebar="group"
       className={cn(
         // Default to px-2, but if the parent group is collapsed, switch to p-2
-        "relative flex w-full min-w-0 flex-col px-2 group-data-[collapsible=icon]:p-2",
+        "relative flex w-full min-w-0 flex-col  group-data-[collapsible=icon]",
         // If your sidebar uses the icon collapse state instead:
         // "group-data-[collapsible=icon]:p-2",
         className,

@@ -2,10 +2,20 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Save, ChevronLeft, Upload, X, Loader2 } from "lucide-react";
+import {
+  Save,
+  ChevronLeft,
+  Upload,
+  X,
+  Loader2,
+  Tags,
+  Plus,
+  ExternalLink,
+  CornerDownRight,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,17 +36,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import TiptapEditor from "@/components/tiptap-editor";
 import { useToast } from "@/hooks/use-toast";
 
 import { useCreateProduct } from "@/services/product";
-import { useCategories } from "@/services/category";
-import { CategoryManagerDialog } from "../components/category-manager";
+import { useAdminCategories } from "@/services/category";
 
 // ==========================================
-// 1. ФУНКЦИЯ ТРАНСЛИТЕРАЦИИ (РУС -> ЛАТ)
+// 1. TRANSLITERATION FUNCTION (RU -> EN)
 // ==========================================
-const transliterate = (text: string) => {
+export const transliterate = (text: string) => {
   const cyrillicToLatinMap: Record<string, string> = {
     а: "a",
     б: "b",
@@ -83,7 +93,7 @@ const transliterate = (text: string) => {
 };
 
 // ==========================================
-// 2. ZOD СХЕМА ВАЛИДАЦИИ
+// 2. ZOD VALIDATION SCHEMA
 // ==========================================
 const productSchema = z.object({
   name: z.string().min(3, "Название обязательно (минимум 3 символа)"),
@@ -119,10 +129,19 @@ const productSchema = z.object({
   color: z.string().optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "OUT_OF_STOCK", "ARCHIVED"]),
   isPublished: z.boolean(),
+
+  tags: z.array(z.string()).default([]),
 });
 
-type ProductFormInput = z.input<typeof productSchema>;
 type ProductFormOutput = z.output<typeof productSchema>;
+
+const PRESET_TAGS = [
+  "Хит продаж",
+  "Новинка",
+  "Скидка",
+  "Рекомендуем",
+  "Эксклюзив",
+];
 
 export default function NewProductPage() {
   const router = useRouter();
@@ -131,16 +150,17 @@ export default function NewProductPage() {
   const [images, setImages] = useState<File[]>([]);
   const [thumb, setThumb] = useState<File | null>(null);
   const [isSlugAuto, setIsSlugAuto] = useState(true);
+  const [tagInput, setTagInput] = useState("");
 
-  // API Hooks
+  // 🚨 NEW: State to track the infinite depth category path
+  const [categoryPath, setCategoryPath] = useState<string[]>([]);
+
   const { mutate: createProduct, isPending } = useCreateProduct();
-  const { data: categoryResponse, isLoading: isLoadingCats } = useCategories();
+  const { data: categoryResponse, isLoading: isLoadingCats } =
+    useAdminCategories();
   const allCategories = categoryResponse?.data || [];
 
-  // ==========================================
-  // 3. НАСТРОЙКА ФОРМЫ (React Hook Form)
-  // ==========================================
-  const form = useForm<ProductFormInput, any, ProductFormOutput>({
+  const form = useForm<z.input<typeof productSchema>, any, ProductFormOutput>({
     resolver: zodResolver(productSchema),
     defaultValues: {
       name: "",
@@ -152,54 +172,116 @@ export default function NewProductPage() {
       discountedPrice: undefined,
       inStock: 0,
       categoryId: "",
-      subCategoryId: "",
+      subCategoryId: "none",
       weight: "",
       dimensions: "",
       color: "",
       status: "ACTIVE",
       isPublished: true,
+      tags: [],
     },
   });
 
   const name = form.watch("name");
-  const selectedCategoryId = form.watch("categoryId");
+  const currentTags = form.watch("tags") || [];
 
-  // Автогенерация ЧПУ и артикула
+  // ==========================================
+  // AUTO-SLUG & SKU
+  // ==========================================
   useEffect(() => {
     if (name) {
-      if (isSlugAuto) {
+      if (isSlugAuto)
         form.setValue("slug", transliterate(name), { shouldValidate: true });
-      }
-
       if (!form.getValues("sku")) {
         const prefix =
           transliterate(name).substring(0, 3).toUpperCase() || "PRD";
-        const generatedSku = `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
-        form.setValue("sku", generatedSku, { shouldValidate: false });
+        form.setValue(
+          "sku",
+          `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`,
+          { shouldValidate: false },
+        );
       }
     } else if (isSlugAuto) {
       form.setValue("slug", "", { shouldValidate: false });
     }
   }, [name, isSlugAuto, form]);
 
-  // Сброс подкатегории при смене главной категории
-  useEffect(() => {
-    form.setValue("subCategoryId", "");
-  }, [selectedCategoryId, form]);
-
-  // Обработчик для ручного ввода slug
   const { onChange: onSlugChange, ...slugFieldRest } = form.register("slug");
 
   // ==========================================
-  // 4. ОТПРАВКА ФОРМЫ
+  // DEEP CATEGORY LOGIC
+  // ==========================================
+  // Dynamically compute how many dropdown levels to show
+  const cascadingLevels = [];
+  let currentParentId: string | null = null;
+
+  for (let i = 0; i <= categoryPath.length; i++) {
+    const options = allCategories.filter(
+      (c: any) => c.parentId === currentParentId,
+    );
+    if (options.length === 0) break; // Reached a leaf node (no more children)
+
+    cascadingLevels.push({
+      level: i,
+      options,
+      selectedValue: categoryPath[i] || "none",
+    });
+
+    currentParentId = categoryPath[i];
+    if (!currentParentId || currentParentId === "none") break;
+  }
+
+  const handleCategoryChange = (level: number, val: string) => {
+    let newPath;
+    if (val === "none") {
+      newPath = categoryPath.slice(0, level); // Trim the path back to the cleared level
+    } else {
+      newPath = [...categoryPath.slice(0, level), val]; // Append the newly selected node
+    }
+    setCategoryPath(newPath);
+
+    // Sync with React Hook Form
+    form.setValue("categoryId", newPath[0] || "", { shouldValidate: true });
+    form.setValue(
+      "subCategoryId",
+      newPath.length > 1 ? newPath[newPath.length - 1] : "none",
+    );
+  };
+
+  // ==========================================
+  // TAGS HANDLERS
+  // ==========================================
+  const handleAddTag = (tag: string) => {
+    const cleanTag = tag.trim();
+    if (cleanTag && !currentTags.includes(cleanTag)) {
+      form.setValue("tags", [...currentTags, cleanTag], {
+        shouldValidate: true,
+      });
+    }
+    setTagInput("");
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    form.setValue(
+      "tags",
+      currentTags.filter((t) => t !== tagToRemove),
+      { shouldValidate: true },
+    );
+  };
+
+  // ==========================================
+  // FORM SUBMISSION
   // ==========================================
   const onSubmit = async (values: ProductFormOutput) => {
     const formData = new FormData();
 
     Object.entries(values).forEach(([key, value]) => {
-      // Игнорируем пустые опциональные поля (в т.ч. фиктивное "none" для подкатегории)
       if (value !== undefined && value !== "" && value !== "none") {
-        formData.append(key, String(value));
+        if (key === "tags") {
+          formData.append(key, JSON.stringify(value));
+        } else {
+          formData.append(key, String(value));
+        }
       }
     });
 
@@ -210,16 +292,15 @@ export default function NewProductPage() {
       onSuccess: () => {
         toast({
           title: "Успешно!",
-          description: "Товар успешно добавлен в каталог.",
+          description: "Товар успешно добавлен.",
           variant: "success",
         });
         router.push("/products");
       },
       onError: (err: any) => {
         toast({
-          title: "Ошибка при создании товара",
-          description:
-            err.response?.data?.message || err.message || "Что-то пошло не так",
+          title: "Ошибка",
+          description: err.response?.data?.message || err.message,
           variant: "destructive",
         });
       },
@@ -229,62 +310,62 @@ export default function NewProductPage() {
   return (
     <form
       onSubmit={form.handleSubmit(onSubmit)}
-      className="space-y-8 pb-20 animate-in fade-in duration-500"
+      className="space-y-8 pb-20 animate-in fade-in duration-500 relative"
     >
       {/* ==========================================
-          ШАПКА
+          STICKY TOOLBAR
       ========================================== */}
-      <div className="flex items-center justify-between sticky top-0 z-20 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl py-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="sticky top-0 z-40 flex items-center justify-between bg-slate-50/90 dark:bg-slate-950/90 backdrop-blur-md py-4 mb-6 border-b border-slate-200 dark:border-slate-800 -mt-4 sm:-mt-6 lg:-mt-8 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-4">
           <Button
             variant="outline"
             size="icon"
             onClick={() => router.back()}
             type="button"
-            className="bg-white dark:bg-slate-900"
+            className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 shadow-sm"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              Добавить товар
-            </h1>
-          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            Добавить товар
+          </h1>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Button
             variant="ghost"
             type="button"
             onClick={() => router.back()}
             disabled={isPending}
+            className="hidden sm:inline-flex"
           >
             Отмена
           </Button>
           <Button
             type="submit"
             disabled={isPending}
-            className="shadow-md bg-blue-600 hover:bg-blue-700 text-white"
+            className="shadow-md bg-blue-600 hover:bg-blue-700 text-white font-medium"
           >
             {isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Save className="mr-2 h-4 w-4" />
             )}
-            Сохранить товар
+            <span className="hidden sm:inline">Сохранить товар</span>
+            <span className="sm:hidden">Сохранить</span>
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 px-1">
         {/* ==========================================
-            ЛЕВАЯ КОЛОНКА
+            LEFT COLUMN (Main Specs)
         ========================================== */}
         <div className="lg:col-span-2 space-y-6">
-          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm">
-            <CardHeader>
-              <CardTitle>Основная информация</CardTitle>
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-lg">Основная информация</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-5">
+            <CardContent className="space-y-6 pt-6">
               <div className="grid gap-2">
                 <Label htmlFor="name">
                   Название товара <span className="text-red-500">*</span>
@@ -293,10 +374,10 @@ export default function NewProductPage() {
                   id="name"
                   {...form.register("name")}
                   placeholder="Например: Премиум корм для осетра"
-                  className={form.formState.errors.name ? "border-red-500" : ""}
+                  className={`transition-all ${form.formState.errors.name ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                 />
                 {form.formState.errors.name && (
-                  <p className="text-xs text-red-500">
+                  <p className="text-xs text-red-500 font-medium">
                     {form.formState.errors.name.message}
                   </p>
                 )}
@@ -320,7 +401,7 @@ export default function NewProductPage() {
                     Можно редактировать вручную
                   </p>
                   {form.formState.errors.slug && (
-                    <p className="text-xs text-red-500">
+                    <p className="text-xs text-red-500 font-medium">
                       {form.formState.errors.slug.message}
                     </p>
                   )}
@@ -335,76 +416,84 @@ export default function NewProductPage() {
                     placeholder="PRM-001"
                   />
                   {form.formState.errors.sku && (
-                    <p className="text-xs text-red-500">
+                    <p className="text-xs text-red-500 font-medium">
                       {form.formState.errors.sku.message}
                     </p>
                   )}
                 </div>
               </div>
 
-              {/* УПРАВЛЕНИЕ КАТЕГОРИЯМИ */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border border-slate-200 dark:border-slate-800 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50">
-                <div className="grid gap-2">
-                  <Label>
-                    Главная категория <span className="text-red-500">*</span>
+              {/* 🚨 NEW: DEEP CASCADING CATEGORIES UI */}
+              <div className="border border-slate-200 dark:border-slate-800 p-5 rounded-xl bg-slate-50 dark:bg-slate-900/50 relative space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-sm font-semibold">
+                    Категория <span className="text-red-500">*</span>
                   </Label>
-                  <Select
-                    onValueChange={(val) => form.setValue("categoryId", val)}
-                    value={form.watch("categoryId")}
+                  <Button
+                    variant="link"
+                    size="sm"
+                    type="button"
+                    className="text-blue-600 hover:text-blue-800 h-auto p-0 font-medium"
+                    onClick={() => router.push("/categories")}
                   >
-                    <SelectTrigger className="bg-white dark:bg-slate-950">
-                      <SelectValue
-                        placeholder={
-                          isLoadingCats ? "Загрузка..." : "Выберите категорию"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {allCategories
-                        .filter((c) => !c.parentId)
-                        .map((cat) => (
-                          <SelectItem key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                    Настройки <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                  </Button>
+                </div>
+
+                <div className="space-y-3">
+                  {cascadingLevels.map((levelData) => (
+                    <div
+                      key={levelData.level}
+                      className="relative flex items-center"
+                    >
+                      {/* Visual indicator connecting parent to child */}
+                      {levelData.level > 0 && (
+                        <CornerDownRight className="h-4 w-4 text-slate-400 mr-2 shrink-0 opacity-70" />
+                      )}
+
+                      <div className="flex-1">
+                        <Select
+                          value={levelData.selectedValue}
+                          onValueChange={(val) =>
+                            handleCategoryChange(levelData.level, val)
+                          }
+                        >
+                          <SelectTrigger
+                            className={`bg-white dark:bg-slate-950 shadow-sm ${levelData.level === 0 && form.formState.errors.categoryId ? "border-red-500" : "border-slate-200 dark:border-slate-800"}`}
+                          >
+                            <SelectValue
+                              placeholder={
+                                levelData.level === 0
+                                  ? "Выберите главную категорию"
+                                  : "Выберите подкатегорию (необязательно)"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {levelData.level > 0 && (
+                              <SelectItem
+                                value="none"
+                                className="text-slate-400 italic"
+                              >
+                                -- Остановиться на этом уровне --
+                              </SelectItem>
+                            )}
+                            {levelData.options.map((cat: any) => (
+                              <SelectItem key={cat.id} value={cat.id}>
+                                {cat.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ))}
+
                   {form.formState.errors.categoryId && (
-                    <p className="text-xs text-red-500">
+                    <p className="text-xs text-red-500 font-medium mt-1">
                       {form.formState.errors.categoryId.message}
                     </p>
                   )}
-                </div>
-
-                <div className="grid gap-2">
-                  <Label>Подкатегория</Label>
-                  <Select
-                    disabled={!selectedCategoryId}
-                    onValueChange={(val) =>
-                      form.setValue("subCategoryId", val === "none" ? "" : val)
-                    }
-                    value={form.watch("subCategoryId") || "none"}
-                  >
-                    <SelectTrigger className="bg-white dark:bg-slate-950">
-                      <SelectValue placeholder="Выберите подкатегорию" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">
-                        -- Нет подкатегории --
-                      </SelectItem>
-                      {allCategories
-                        .filter((c) => c.parentId === selectedCategoryId)
-                        .map((cat) => (
-                          <SelectItem key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="col-span-1 md:col-span-2">
-                  <CategoryManagerDialog />
                 </div>
               </div>
 
@@ -419,7 +508,7 @@ export default function NewProductPage() {
                   className="resize-none h-20"
                 />
                 {form.formState.errors.description && (
-                  <p className="text-xs text-red-500">
+                  <p className="text-xs text-red-500 font-medium">
                     {form.formState.errors.description.message}
                   </p>
                 )}
@@ -427,7 +516,7 @@ export default function NewProductPage() {
 
               <div className="grid gap-2">
                 <Label>Подробное описание (Rich Text)</Label>
-                <div className="border rounded-lg overflow-hidden">
+                <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden min-h-[200px]">
                   <TiptapEditor
                     content=""
                     onChange={(html) =>
@@ -439,15 +528,15 @@ export default function NewProductPage() {
             </CardContent>
           </Card>
 
-          {/* МЕДИА ГАЛЕРЕЯ */}
-          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm">
-            <CardHeader>
-              <CardTitle>Галерея медиа</CardTitle>
+          {/* MEDIA GALLERY */}
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-lg">Галерея медиа</CardTitle>
               <CardDescription>
                 Загрузите изображения для товара.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-6 pt-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-3">
                   <Label>Главное изображение (Миниатюра)</Label>
@@ -546,19 +635,100 @@ export default function NewProductPage() {
         </div>
 
         {/* ==========================================
-            ПРАВАЯ КОЛОНКА
+            RIGHT COLUMN (Tags, Pricing, Meta)
         ========================================== */}
         <div className="space-y-6">
-          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm">
-            <CardHeader>
-              <CardTitle>Статус и Цены</CardTitle>
+          {/* TAGS MANAGEMENT */}
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Tags className="h-4 w-4 text-blue-600" />
+                Теги (Группы на главной)
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-5">
+            <CardContent className="pt-5 space-y-5">
+              <div className="flex flex-wrap gap-2">
+                {PRESET_TAGS.map((tag) => {
+                  const isSelected = currentTags.includes(tag);
+                  return (
+                    <Badge
+                      key={tag}
+                      variant={isSelected ? "default" : "outline"}
+                      className={`cursor-pointer transition-all border-slate-200 dark:border-slate-700 ${isSelected ? "bg-blue-600 hover:bg-blue-700 text-white border-transparent" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}
+                      onClick={() =>
+                        isSelected ? handleRemoveTag(tag) : handleAddTag(tag)
+                      }
+                    >
+                      {tag}{" "}
+                      {isSelected ? (
+                        <X className="ml-1 h-3 w-3" />
+                      ) : (
+                        <Plus className="ml-1 h-3 w-3 text-slate-400" />
+                      )}
+                    </Badge>
+                  );
+                })}
+              </div>
+
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Свой тег..."
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddTag(tagInput);
+                    }
+                  }}
+                  className="text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => handleAddTag(tagInput)}
+                >
+                  Добавить
+                </Button>
+              </div>
+
+              {currentTags.filter((t) => !PRESET_TAGS.includes(t)).length >
+                0 && (
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
+                  <span className="text-xs text-slate-500 w-full mb-1 font-medium">
+                    Свои теги:
+                  </span>
+                  {currentTags
+                    .filter((t) => !PRESET_TAGS.includes(t))
+                    .map((tag) => (
+                      <Badge
+                        key={tag}
+                        className="bg-slate-700 hover:bg-slate-800 text-white pr-1.5 flex items-center gap-1 transition-colors"
+                      >
+                        {tag}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTag(tag)}
+                          className="rounded-full hover:bg-slate-500 p-0.5 transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* STATUS & PRICING */}
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-base">Статус и Цены</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5 pt-5">
               <div className="flex items-center justify-between p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-900/50">
                 <div className="space-y-0.5">
-                  <Label className="text-base font-semibold">
-                    Опубликовано
-                  </Label>
+                  <Label className="text-sm font-semibold">Опубликовано</Label>
                   <p className="text-[11px] text-muted-foreground">
                     Показывать товар клиентам
                   </p>
@@ -572,20 +742,28 @@ export default function NewProductPage() {
 
               <div className="grid gap-2">
                 <Label>Статус наличия</Label>
-                <Select
-                  onValueChange={(v: any) => form.setValue("status", v)}
-                  defaultValue="ACTIVE"
-                >
-                  <SelectTrigger className="bg-white dark:bg-slate-950">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ACTIVE">Активен</SelectItem>
-                    <SelectItem value="OUT_OF_STOCK">Нет в наличии</SelectItem>
-                    <SelectItem value="INACTIVE">Неактивен</SelectItem>
-                    <SelectItem value="ARCHIVED">В архиве</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Controller
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value || "ACTIVE"}
+                    >
+                      <SelectTrigger className="bg-white dark:bg-slate-950">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ACTIVE">Активен</SelectItem>
+                        <SelectItem value="OUT_OF_STOCK">
+                          Нет в наличии
+                        </SelectItem>
+                        <SelectItem value="INACTIVE">Неактивен</SelectItem>
+                        <SelectItem value="ARCHIVED">В архиве</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4 pt-2">
@@ -600,7 +778,7 @@ export default function NewProductPage() {
                     placeholder="0.00"
                   />
                   {form.formState.errors.price && (
-                    <p className="text-xs text-red-500">
+                    <p className="text-xs text-red-500 font-medium">
                       {form.formState.errors.price.message}
                     </p>
                   )}
@@ -616,7 +794,7 @@ export default function NewProductPage() {
                 </div>
               </div>
 
-              <div className="grid gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <div className="grid gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
                 <Label>
                   Остаток на складе (шт.){" "}
                   <span className="text-red-500">*</span>
@@ -627,7 +805,7 @@ export default function NewProductPage() {
                   placeholder="0"
                 />
                 {form.formState.errors.inStock && (
-                  <p className="text-xs text-red-500">
+                  <p className="text-xs text-red-500 font-medium">
                     {form.formState.errors.inStock.message}
                   </p>
                 )}
@@ -635,13 +813,14 @@ export default function NewProductPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-none shadow-sm bg-indigo-50/50 dark:bg-indigo-900/10">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm uppercase tracking-wider text-indigo-700 dark:text-indigo-400">
+          {/* CHARACTERISTICS */}
+          <Card className="border border-indigo-100 dark:border-indigo-900/30 shadow-sm bg-indigo-50/30 dark:bg-indigo-900/10 overflow-hidden">
+            <CardHeader className="pb-3 bg-indigo-50/80 dark:bg-indigo-900/20 border-b border-indigo-100 dark:border-indigo-900/30">
+              <CardTitle className="text-xs uppercase tracking-wider text-indigo-700 dark:text-indigo-400 font-bold">
                 Характеристики
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-4">
               <div className="grid gap-2">
                 <Label className="text-xs text-slate-600 dark:text-slate-400">
                   Вес

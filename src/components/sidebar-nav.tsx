@@ -10,18 +10,21 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarGroup,
-  SidebarGroupLabel,
 } from "@/components/ui/sidebar";
 import {
   LayoutDashboard,
   BellRing,
   Command,
-  Settings,
   Headset,
-  Paperclip,
   CreditCard,
   Users,
   Ticket,
+  Layers,
+  Package,
+  ShoppingCart,
+  Truck,
+  Tag,
+  FileText,
 } from "lucide-react";
 
 export function SidebarNav() {
@@ -29,77 +32,74 @@ export function SidebarNav() {
   const { data: session } = useSession();
   const userRole = session?.user?.role;
 
+  // Grouped logically but without labels for a compact, elegant layout
   const menuGroups = [
     {
-      label: "Platform",
       items: [
         {
           href: "/dashboard",
           icon: LayoutDashboard,
-          label: "Dashboard",
+          label: "Дашборд",
         },
       ],
     },
     ...(userRole === "ADMINISTRATOR"
       ? [
           {
-            label: "Users",
             items: [
               {
                 href: "/users/manage",
                 icon: Users,
-                label: "Users",
+                label: "Пользователи",
               },
               {
                 href: "/customers",
                 icon: Ticket,
-                label: "Customers",
+                label: "Клиенты",
               },
             ],
           },
         ]
       : []),
-
     {
-      label: "Inventory",
       items: [
-        { href: "/products", icon: Settings, label: "Products" },
-        { href: "/orders", icon: Settings, label: "Orders" },
-        { href: "/payments", icon: CreditCard, label: "Payments" },
+        { href: "/categories", icon: Layers, label: "Категории" },
+        { href: "/products", icon: Package, label: "Товары" },
+        { href: "/orders", icon: ShoppingCart, label: "Заказы" },
+        { href: "/payments", icon: CreditCard, label: "Платежи" },
       ],
     },
     {
-      label: "Settings",
       items: [
-        { href: "/shipping", icon: Settings, label: "Shipping" },
-        { href: "/promocode", icon: Settings, label: "Promocodes" },
+        { href: "/shipping", icon: Truck, label: "Доставка" },
+        { href: "/promocode", icon: Tag, label: "Промокоды" },
       ],
     },
     {
-      label: "Communication",
       items: [
-        { href: "/blog", icon: Paperclip, label: "Blog" },
-        { href: "/support", icon: Headset, label: "Support" },
-        { href: "/notifications", icon: BellRing, label: "Notification" },
+        { href: "/blog", icon: FileText, label: "Блог" },
+        { href: "/support", icon: Headset, label: "Поддержка" },
+        { href: "/notifications", icon: BellRing, label: "Уведомления" },
       ],
     },
   ];
 
   return (
     <>
-      <SidebarHeader className="pt-3 pb-0">
+      <SidebarHeader className="p-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
               asChild
-              className="hover:bg-transparent focus:bg-transparent active:bg-transparent group-data-[collapsible=icon]:justify-center"
+              className="hover:bg-white/5 focus:bg-transparent active:bg-transparent group-data-[collapsible=icon]:justify-center rounded-xl"
             >
               <Link href="/dashboard" className="gap-3">
-                <Command className="size-4 text-white" strokeWidth={2.5} />
-
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-orange-500 text-white">
+                  <Command className="size-4.5" strokeWidth={2.5} />
+                </div>
                 <div className="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden transition-opacity">
-                  <span className="truncate text-[15px] font-semibold tracking-tight text-white uppercase">
+                  <span className="truncate text-sm font-bold tracking-wider text-white uppercase">
                     Shop Admin
                   </span>
                 </div>
@@ -109,14 +109,13 @@ export function SidebarNav() {
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent className="pb-4 gap-0">
-        {menuGroups.map((group) => (
-          <SidebarGroup key={group.label} className="pt-1">
-            <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-0.5 px-2">
-              {group.label}
-            </SidebarGroupLabel>
-
-            <SidebarMenu className="gap-0.5 px-1.5 group-data-[collapsible=icon]:px-0">
+      <SidebarContent className="pb-4 px-2 gap-0">
+        {menuGroups.map((group, groupIndex) => (
+          <SidebarGroup
+            key={groupIndex}
+            // className={`px-0 py-1.5 ${groupIndex !== 0 ? "border-t border-white/10 mt-1.5" : ""}`}
+          >
+            <SidebarMenu className="gap-0.5 group-data-[collapsible=icon]:px-0">
               {group.items.map((item) => {
                 const isActive = pathname === item.href;
 
@@ -126,19 +125,17 @@ export function SidebarNav() {
                       asChild
                       isActive={isActive}
                       tooltip={item.label}
-                      // FIX: Removed the generic "group" class from here
-                      className={`h-8 transition-all duration-200 group-data-[collapsible=icon]:justify-center rounded-xl ${
+                      className={`h-9 group flex items-center transition-all duration-200 group-data-[collapsible=icon]:justify-center rounded-lg ${
                         isActive
-                          ? "bg-transparent hover:bg-transparent"
-                          : "hover:bg-white/30"
+                          ? "bg-orange-500/15 hover:bg-orange-500/20"
+                          : "hover:bg-white/10"
                       }`}
                     >
                       <Link
                         href={item.href}
-                        className="flex items-center gap-2.5"
+                        className="flex items-center gap-3"
                       >
                         <item.icon
-                          // FIX: Used the specific named group hover (group-hover/menu-item)
                           className={`size-4 shrink-0 transition-colors ${
                             isActive
                               ? "text-orange-500"
@@ -146,11 +143,10 @@ export function SidebarNav() {
                           }`}
                         />
                         <span
-                          // FIX: Used the specific named group hover (group-hover/menu-item)
-                          className={`font-medium text-[13px] transition-colors group-data-[collapsible=icon]:hidden ${
+                          className={`font-medium text-[13px] tracking-wide transition-colors group-data-[collapsible=icon]:hidden ${
                             isActive
-                              ? "text-orange-500"
-                              : "text-slate-400 group-hover/menu-item:text-white"
+                              ? "text-orange-500 font-semibold"
+                              : "text-slate-300 group-hover/menu-item:text-white"
                           }`}
                         >
                           {item.label}
