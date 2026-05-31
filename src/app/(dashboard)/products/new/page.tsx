@@ -15,6 +15,7 @@ import {
   Plus,
   ExternalLink,
   CornerDownRight,
+  ShoppingCart,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -131,6 +132,33 @@ const productSchema = z.object({
   isPublished: z.boolean(),
 
   tags: z.array(z.string()).default([]),
+
+  // 🚨 NEW: Marketplace Links Validation (Optional URLs)
+  avitoLink: z
+    .string()
+    .url("Введите корректный URL")
+    .optional()
+    .or(z.literal("")),
+  yandexmarketLink: z
+    .string()
+    .url("Введите корректный URL")
+    .optional()
+    .or(z.literal("")),
+  ozonLink: z
+    .string()
+    .url("Введите корректный URL")
+    .optional()
+    .or(z.literal("")),
+  wildberriesLink: z
+    .string()
+    .url("Введите корректный URL")
+    .optional()
+    .or(z.literal("")),
+  amazonLink: z
+    .string()
+    .url("Введите корректный URL")
+    .optional()
+    .or(z.literal("")),
 });
 
 type ProductFormOutput = z.output<typeof productSchema>;
@@ -151,13 +179,10 @@ export default function NewProductPage() {
   const [thumb, setThumb] = useState<File | null>(null);
   const [isSlugAuto, setIsSlugAuto] = useState(true);
   const [tagInput, setTagInput] = useState("");
-
-  // 🚨 NEW: State to track the infinite depth category path
   const [categoryPath, setCategoryPath] = useState<string[]>([]);
 
   const { mutate: createProduct, isPending } = useCreateProduct();
-  const { data: categoryResponse, isLoading: isLoadingCats } =
-    useAdminCategories();
+  const { data: categoryResponse } = useAdminCategories();
   const allCategories = categoryResponse?.data || [];
 
   const form = useForm<z.input<typeof productSchema>, any, ProductFormOutput>({
@@ -179,6 +204,12 @@ export default function NewProductPage() {
       status: "ACTIVE",
       isPublished: true,
       tags: [],
+      // 🚨 NEW: Marketplace Defaults
+      avitoLink: "",
+      yandexmarketLink: "",
+      ozonLink: "",
+      wildberriesLink: "",
+      amazonLink: "",
     },
   });
 
@@ -211,7 +242,6 @@ export default function NewProductPage() {
   // ==========================================
   // DEEP CATEGORY LOGIC
   // ==========================================
-  // Dynamically compute how many dropdown levels to show
   const cascadingLevels = [];
   let currentParentId: string | null = null;
 
@@ -219,7 +249,7 @@ export default function NewProductPage() {
     const options = allCategories.filter(
       (c: any) => c.parentId === currentParentId,
     );
-    if (options.length === 0) break; // Reached a leaf node (no more children)
+    if (options.length === 0) break;
 
     cascadingLevels.push({
       level: i,
@@ -234,13 +264,12 @@ export default function NewProductPage() {
   const handleCategoryChange = (level: number, val: string) => {
     let newPath;
     if (val === "none") {
-      newPath = categoryPath.slice(0, level); // Trim the path back to the cleared level
+      newPath = categoryPath.slice(0, level);
     } else {
-      newPath = [...categoryPath.slice(0, level), val]; // Append the newly selected node
+      newPath = [...categoryPath.slice(0, level), val];
     }
     setCategoryPath(newPath);
 
-    // Sync with React Hook Form
     form.setValue("categoryId", newPath[0] || "", { shouldValidate: true });
     form.setValue(
       "subCategoryId",
@@ -276,6 +305,7 @@ export default function NewProductPage() {
     const formData = new FormData();
 
     Object.entries(values).forEach(([key, value]) => {
+      // Avoid appending empty strings for optional fields so the backend DB cleanly records NULL
       if (value !== undefined && value !== "" && value !== "none") {
         if (key === "tags") {
           formData.append(key, JSON.stringify(value));
@@ -312,9 +342,7 @@ export default function NewProductPage() {
       onSubmit={form.handleSubmit(onSubmit)}
       className="space-y-8 pb-20 animate-in fade-in duration-500 relative"
     >
-      {/* ==========================================
-          STICKY TOOLBAR
-      ========================================== */}
+      {/* STICKY TOOLBAR */}
       <div className="sticky top-0 z-40 flex items-center justify-between bg-slate-50/90 dark:bg-slate-950/90 backdrop-blur-md py-4 mb-6 border-b border-slate-200 dark:border-slate-800 -mt-4 sm:-mt-6 lg:-mt-8 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-4">
           <Button
@@ -356,10 +384,8 @@ export default function NewProductPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 px-1">
-        {/* ==========================================
-            LEFT COLUMN (Main Specs)
-        ========================================== */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 px-1">
+        {/* LEFT COLUMN (Main Specs) */}
         <div className="lg:col-span-2 space-y-6">
           <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
             <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
@@ -423,7 +449,7 @@ export default function NewProductPage() {
                 </div>
               </div>
 
-              {/* 🚨 NEW: DEEP CASCADING CATEGORIES UI */}
+              {/* DEEP CASCADING CATEGORIES UI */}
               <div className="border border-slate-200 dark:border-slate-800 p-5 rounded-xl bg-slate-50 dark:bg-slate-900/50 relative space-y-4">
                 <div className="flex items-center justify-between mb-2">
                   <Label className="text-sm font-semibold">
@@ -446,11 +472,9 @@ export default function NewProductPage() {
                       key={levelData.level}
                       className="relative flex items-center"
                     >
-                      {/* Visual indicator connecting parent to child */}
                       {levelData.level > 0 && (
                         <CornerDownRight className="h-4 w-4 text-slate-400 mr-2 shrink-0 opacity-70" />
                       )}
-
                       <div className="flex-1">
                         <Select
                           value={levelData.selectedValue}
@@ -488,7 +512,6 @@ export default function NewProductPage() {
                       </div>
                     </div>
                   ))}
-
                   {form.formState.errors.categoryId && (
                     <p className="text-xs text-red-500 font-medium mt-1">
                       {form.formState.errors.categoryId.message}
@@ -634,92 +657,8 @@ export default function NewProductPage() {
           </Card>
         </div>
 
-        {/* ==========================================
-            RIGHT COLUMN (Tags, Pricing, Meta)
-        ========================================== */}
+        {/* RIGHT COLUMN (Tags, Pricing, Meta) */}
         <div className="space-y-6">
-          {/* TAGS MANAGEMENT */}
-          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Tags className="h-4 w-4 text-blue-600" />
-                Теги (Группы на главной)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-5 space-y-5">
-              <div className="flex flex-wrap gap-2">
-                {PRESET_TAGS.map((tag) => {
-                  const isSelected = currentTags.includes(tag);
-                  return (
-                    <Badge
-                      key={tag}
-                      variant={isSelected ? "default" : "outline"}
-                      className={`cursor-pointer transition-all border-slate-200 dark:border-slate-700 ${isSelected ? "bg-blue-600 hover:bg-blue-700 text-white border-transparent" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}
-                      onClick={() =>
-                        isSelected ? handleRemoveTag(tag) : handleAddTag(tag)
-                      }
-                    >
-                      {tag}{" "}
-                      {isSelected ? (
-                        <X className="ml-1 h-3 w-3" />
-                      ) : (
-                        <Plus className="ml-1 h-3 w-3 text-slate-400" />
-                      )}
-                    </Badge>
-                  );
-                })}
-              </div>
-
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Свой тег..."
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleAddTag(tagInput);
-                    }
-                  }}
-                  className="text-sm"
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => handleAddTag(tagInput)}
-                >
-                  Добавить
-                </Button>
-              </div>
-
-              {currentTags.filter((t) => !PRESET_TAGS.includes(t)).length >
-                0 && (
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
-                  <span className="text-xs text-slate-500 w-full mb-1 font-medium">
-                    Свои теги:
-                  </span>
-                  {currentTags
-                    .filter((t) => !PRESET_TAGS.includes(t))
-                    .map((tag) => (
-                      <Badge
-                        key={tag}
-                        className="bg-slate-700 hover:bg-slate-800 text-white pr-1.5 flex items-center gap-1 transition-colors"
-                      >
-                        {tag}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTag(tag)}
-                          className="rounded-full hover:bg-slate-500 p-0.5 transition-colors"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {/* STATUS & PRICING */}
           <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
             <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
@@ -810,6 +749,158 @@ export default function NewProductPage() {
                   </p>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* 🚨 NEW: MARKETPLACE LINKS */}
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <ShoppingCart className="h-4 w-4 text-emerald-600" />
+                Ссылки на маркетплейсы
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-5">
+              <div className="grid gap-2">
+                <Label className="text-xs">Яндекс Маркет</Label>
+                <Input
+                  {...form.register("yandexmarketLink")}
+                  placeholder="https://market.yandex.ru/..."
+                />
+                {form.formState.errors.yandexmarketLink && (
+                  <p className="text-[10px] text-red-500">
+                    {form.formState.errors.yandexmarketLink.message}
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-xs">Ozon</Label>
+                <Input
+                  {...form.register("ozonLink")}
+                  placeholder="https://ozon.ru/..."
+                />
+                {form.formState.errors.ozonLink && (
+                  <p className="text-[10px] text-red-500">
+                    {form.formState.errors.ozonLink.message}
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-xs">Wildberries</Label>
+                <Input
+                  {...form.register("wildberriesLink")}
+                  placeholder="https://wildberries.ru/..."
+                />
+                {form.formState.errors.wildberriesLink && (
+                  <p className="text-[10px] text-red-500">
+                    {form.formState.errors.wildberriesLink.message}
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-xs">Avito</Label>
+                <Input
+                  {...form.register("avitoLink")}
+                  placeholder="https://avito.ru/..."
+                />
+                {form.formState.errors.avitoLink && (
+                  <p className="text-[10px] text-red-500">
+                    {form.formState.errors.avitoLink.message}
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-xs">Amazon</Label>
+                <Input
+                  {...form.register("amazonLink")}
+                  placeholder="https://amazon.com/..."
+                />
+                {form.formState.errors.amazonLink && (
+                  <p className="text-[10px] text-red-500">
+                    {form.formState.errors.amazonLink.message}
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* TAGS MANAGEMENT */}
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Tags className="h-4 w-4 text-blue-600" />
+                Теги
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-5">
+              <div className="flex flex-wrap gap-2">
+                {PRESET_TAGS.map((tag) => {
+                  const isSelected = currentTags.includes(tag);
+                  return (
+                    <Badge
+                      key={tag}
+                      variant={isSelected ? "default" : "outline"}
+                      className={`cursor-pointer transition-all border-slate-200 dark:border-slate-700 ${isSelected ? "bg-blue-600 hover:bg-blue-700 text-white border-transparent" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}
+                      onClick={() =>
+                        isSelected ? handleRemoveTag(tag) : handleAddTag(tag)
+                      }
+                    >
+                      {tag}{" "}
+                      {isSelected ? (
+                        <X className="ml-1 h-3 w-3" />
+                      ) : (
+                        <Plus className="ml-1 h-3 w-3 text-slate-400" />
+                      )}
+                    </Badge>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Свой тег..."
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddTag(tagInput);
+                    }
+                  }}
+                  className="text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => handleAddTag(tagInput)}
+                >
+                  Добавить
+                </Button>
+              </div>
+              {currentTags.filter((t) => !PRESET_TAGS.includes(t)).length >
+                0 && (
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
+                  <span className="text-xs text-slate-500 w-full mb-1 font-medium">
+                    Свои теги:
+                  </span>
+                  {currentTags
+                    .filter((t) => !PRESET_TAGS.includes(t))
+                    .map((tag) => (
+                      <Badge
+                        key={tag}
+                        className="bg-slate-700 hover:bg-slate-800 text-white pr-1.5 flex items-center gap-1 transition-colors"
+                      >
+                        {tag}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTag(tag)}
+                          className="rounded-full hover:bg-slate-500 p-0.5 transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

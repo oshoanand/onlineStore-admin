@@ -1,5 +1,28 @@
 import { apiRequest } from "@/services/http/api-client";
-import { NotificationItem } from "@/types/notification";
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  createdAt: string;
+  link?: string;
+  data?: Record<string, any>;
+}
+
+export interface ChatSession {
+  id: string;
+  partnerId: string;
+  partnerName: string;
+  partnerRole?: string;
+  partnerImage: string | null;
+  lastMessage: string;
+  lastMessageTime: string;
+  unreadCount: number;
+  isOnline: boolean;
+  lastSeen?: string;
+}
 
 export const notificationApi = {
   getNotifications: () =>
@@ -16,11 +39,16 @@ export const notificationApi = {
       url: `/notifications/${id}/read`,
     }),
 
-  // 🚨 ADD THIS NEW FUNCTION
   markAllAsRead: () =>
     apiRequest<{ success: boolean }>({
       method: "PATCH",
       url: `/notifications/read-all`,
+    }),
+
+  getChatSessions: () =>
+    apiRequest<ChatSession[]>({
+      method: "GET",
+      url: "/notifications/chat/sessions",
     }),
 
   registerDeviceToken: (fcmToken: string) =>

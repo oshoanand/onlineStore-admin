@@ -36,3 +36,26 @@ export const formatDate = (dateStr: string | undefined | null): string => {
     return "";
   }
 };
+
+// Intelligent Mobile Mask: Forces +7 seamlessly
+export const maskMobile = (value: string) => {
+  if (!value) return "";
+
+  let numbers = value.replace(/\D/g, "");
+
+  // Standardize prefix
+  if (numbers.startsWith("7") || numbers.startsWith("8")) {
+    numbers = numbers.substring(1);
+  }
+
+  // If user clears the input, return empty to allow complete deletion
+  if (numbers.length === 0) return "";
+
+  let formatted = "+7 ";
+  if (numbers.length > 0) formatted += `(${numbers.substring(0, 3)}`;
+  if (numbers.length >= 4) formatted += `) ${numbers.substring(3, 6)}`;
+  if (numbers.length >= 7) formatted += `-${numbers.substring(6, 8)}`;
+  if (numbers.length >= 9) formatted += `-${numbers.substring(8, 10)}`;
+
+  return formatted;
+};

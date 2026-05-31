@@ -88,10 +88,7 @@ export default function DashboardLayout({
         {/* 🚨 FIX 2: Made <main> the scroll container. Removed padding from here so sticky elements attach exactly to the top. */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden relative">
           <Suspense fallback={<GlobalLoadingFallback />}>
-            {/* 🚨 FIX 3: Removed 'h-full'. Moved padding here. */}
-            <div className="mx-auto max-w-7xl w-full p-4 sm:p-6 lg:p-8">
-              {children}
-            </div>
+            <div className="mx-auto max-w-7xl w-full  bg-white">{children}</div>
           </Suspense>
         </main>
       </SidebarInset>

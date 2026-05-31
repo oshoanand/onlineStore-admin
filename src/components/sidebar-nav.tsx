@@ -25,6 +25,7 @@ import {
   Truck,
   Tag,
   FileText,
+  MessageCircle,
 } from "lucide-react";
 
 export function SidebarNav() {
@@ -48,7 +49,7 @@ export function SidebarNav() {
           {
             items: [
               {
-                href: "/users/manage",
+                href: "/users",
                 icon: Users,
                 label: "Пользователи",
               },
@@ -79,6 +80,7 @@ export function SidebarNav() {
       items: [
         { href: "/blog", icon: FileText, label: "Блог" },
         { href: "/support", icon: Headset, label: "Поддержка" },
+        { href: "/chat", icon: MessageCircle, label: "Чат" },
         { href: "/notifications", icon: BellRing, label: "Уведомления" },
       ],
     },
@@ -109,7 +111,7 @@ export function SidebarNav() {
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent className="pb-4 px-2 gap-0">
+      <SidebarContent className="pb-4 px-2 gap-0  no-scrollbar">
         {menuGroups.map((group, groupIndex) => (
           <SidebarGroup
             key={groupIndex}
@@ -117,7 +119,11 @@ export function SidebarNav() {
           >
             <SidebarMenu className="gap-0.5 group-data-[collapsible=icon]:px-0">
               {group.items.map((item) => {
-                const isActive = pathname === item.href;
+                // const isActive = pathname === item.href;
+
+                const isActive =
+                  pathname === item.href ||
+                  pathname.startsWith(`${item.href}/`);
 
                 return (
                   <SidebarMenuItem key={item.href}>

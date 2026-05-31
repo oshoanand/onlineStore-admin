@@ -125,3 +125,12 @@
 @utility sidebar-hover-bg {
   @apply hover:bg-sidebar-accent/90;
 }
+
+@utility no-scrollbar {
+  /* Hide scrollbar for Chrome, Safari, and newer Opera */
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  /* Hide scrollbar for Firefox */
+  scrollbar-width: none;
+}

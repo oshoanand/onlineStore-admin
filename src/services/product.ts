@@ -13,7 +13,7 @@ export interface Product {
   id: string;
   name: string;
   slug: string;
-  sku?: string | null; // Added SKU
+  sku?: string | null;
   description: string;
   detailedDescription?: string | null;
   price: number;
@@ -24,12 +24,20 @@ export interface Product {
   weight?: string | null;
   dimensions?: string | null;
   color?: string | null;
-  categories: any[]; // Changed to any[] because admin/all returns string[], admin/:id returns objects
-  tags: string[]; // Added tags array
+  categories: any[];
+  tags: string[];
   averageRating: number;
   reviewCount: number;
   thumbImage?: string | null;
   imageArray: string[];
+
+  // 🚨 NEW: Marketplace Links
+  avitoLink?: string | null;
+  yandexmarketLink?: string | null;
+  ozonLink?: string | null;
+  wildberriesLink?: string | null;
+  amazonLink?: string | null;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -60,9 +68,6 @@ export interface PaginatedApiResponse<T> {
 // 2. RAW API CALLS
 // ==========================================
 export const productApi = {
-  /**
-   * Fetch all products (Admin View - Paginated)
-   */
   getAdminProducts: (
     params?: ProductQueryParams,
   ): Promise<PaginatedApiResponse<Product[]>> =>
@@ -72,18 +77,12 @@ export const productApi = {
       params,
     }),
 
-  /**
-   * Fetch a single product by ID for the Edit Page
-   */
   getProductById: (id: string): Promise<ApiResponse<Product>> =>
     apiRequest({
       method: "GET",
       url: `/products/admin/${id}`,
     }),
 
-  /**
-   * Create a new product (Requires FormData for MinIO Images)
-   */
   createProduct: (data: FormData): Promise<ApiResponse<Product>> =>
     apiRequest({
       method: "POST",
@@ -91,9 +90,6 @@ export const productApi = {
       data,
     }),
 
-  /**
-   * Update an existing product
-   */
   updateProduct: ({
     id,
     data,
@@ -107,18 +103,12 @@ export const productApi = {
       data,
     }),
 
-  /**
-   * Delete a product
-   */
   deleteProduct: (id: string): Promise<ApiResponse<null>> =>
     apiRequest({
       method: "DELETE",
       url: `/products/admin/${id}`,
     }),
 
-  /**
-   * Update only the status (Active/Inactive) or Stock via Patch
-   */
   updateProductStatus: (
     id: string,
     status: ProductStatus,
@@ -145,7 +135,7 @@ export const useProductById = (id: string) => {
   return useQuery({
     queryKey: ["admin", "product", id],
     queryFn: () => productApi.getProductById(id),
-    enabled: !!id, // Only run if ID is valid
+    enabled: !!id,
   });
 };
 
@@ -169,10 +159,7 @@ export const useUpdateProduct = () => {
   return useMutation({
     mutationFn: productApi.updateProduct,
     onSuccess: (_, variables) => {
-      // 1. Invalidate the admin product list cache
       queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
-
-      // 2. CRITICAL: Invalidate the specific product's cache!
       queryClient.invalidateQueries({
         queryKey: ["admin", "product", variables.id],
       });
@@ -196,9 +183,7 @@ export const useUpdateProductStatus = () => {
     mutationFn: ({ id, status }: { id: string; status: ProductStatus }) =>
       productApi.updateProductStatus(id, status),
     onSuccess: (_, variables) => {
-      // Invalidate the list
       queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
-      // Invalidate the specific item being updated
       queryClient.invalidateQueries({
         queryKey: ["admin", "product", variables.id],
       });

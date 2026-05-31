@@ -15,6 +15,7 @@ import {
   Plus,
   ExternalLink,
   CornerDownRight,
+  ShoppingCart, // 🚨 NEW: Imported for the marketplace card
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -130,6 +131,33 @@ const productSchema = z.object({
   isPublished: z.boolean(),
 
   tags: z.array(z.string()).default([]),
+
+  // 🚨 NEW: Marketplace Links Validation (Optional URLs)
+  avitoLink: z
+    .string()
+    .url("Введите корректный URL")
+    .optional()
+    .or(z.literal("")),
+  yandexmarketLink: z
+    .string()
+    .url("Введите корректный URL")
+    .optional()
+    .or(z.literal("")),
+  ozonLink: z
+    .string()
+    .url("Введите корректный URL")
+    .optional()
+    .or(z.literal("")),
+  wildberriesLink: z
+    .string()
+    .url("Введите корректный URL")
+    .optional()
+    .or(z.literal("")),
+  amazonLink: z
+    .string()
+    .url("Введите корректный URL")
+    .optional()
+    .or(z.literal("")),
 });
 
 type ProductFormInput = z.input<typeof productSchema>;
@@ -158,7 +186,6 @@ export default function EditProductPage() {
   const [isSlugAuto, setIsSlugAuto] = useState(false); // Usually false on Edit
   const [tagInput, setTagInput] = useState("");
 
-  // 🚨 NEW: Deep Cascading Path State
   const [categoryPath, setCategoryPath] = useState<string[]>([]);
   const [isFormInitialized, setIsFormInitialized] = useState(false);
 
@@ -191,6 +218,12 @@ export default function EditProductPage() {
       status: "ACTIVE",
       isPublished: true,
       tags: [],
+      // 🚨 NEW: Marketplace Links Defaults
+      avitoLink: "",
+      yandexmarketLink: "",
+      ozonLink: "",
+      wildberriesLink: "",
+      amazonLink: "",
     },
   });
 
@@ -207,19 +240,15 @@ export default function EditProductPage() {
       let reconstructedPath: string[] = [];
 
       if (Array.isArray(product.categories) && product.categories.length > 0) {
-        // Find the deepest leaf node connected to this product
-        // A leaf node is a category that does NOT act as a parent to any other connected category
         let leafCat = product.categories.find(
           (c: any) =>
             !product.categories.some((other: any) => other.parentId === c.id),
         );
+        if (!leafCat) leafCat = product.categories[0];
 
-        if (!leafCat) leafCat = product.categories[0]; // Fallback
-
-        // Trace up to the root using the allCategories master list
         let currentId = leafCat?.id;
         while (currentId) {
-          reconstructedPath.unshift(currentId); // Add to the front to build [root, ... , leaf]
+          reconstructedPath.unshift(currentId);
           const catObj = allCategories.find((c: any) => c.id === currentId);
           currentId = catObj?.parentId || null;
         }
@@ -247,6 +276,13 @@ export default function EditProductPage() {
         status: product.status || "ACTIVE",
         isPublished: product.isPublished ?? true,
         tags: product.tags || [],
+
+        // 🚨 NEW: Map existing links from backend to form
+        avitoLink: product.avitoLink || "",
+        yandexmarketLink: product.yandexmarketLink || "",
+        ozonLink: product.ozonLink || "",
+        wildberriesLink: product.wildberriesLink || "",
+        amazonLink: product.amazonLink || "",
       });
 
       setExistingThumb(product.thumbImage || null);
@@ -279,7 +315,6 @@ export default function EditProductPage() {
 
   const { onChange: onSlugChange, ...slugFieldRest } = form.register("slug");
 
-  // Dynamically compute how many dropdown levels to show
   const cascadingLevels = [];
   let currentParentId: string | null = null;
 
@@ -287,7 +322,7 @@ export default function EditProductPage() {
     const options = allCategories.filter(
       (c: any) => c.parentId === currentParentId,
     );
-    if (options.length === 0) break; // Reached a leaf node
+    if (options.length === 0) break;
 
     cascadingLevels.push({
       level: i,
@@ -302,13 +337,12 @@ export default function EditProductPage() {
   const handleCategoryChange = (level: number, val: string) => {
     let newPath;
     if (val === "none") {
-      newPath = categoryPath.slice(0, level); // Trim back
+      newPath = categoryPath.slice(0, level);
     } else {
-      newPath = [...categoryPath.slice(0, level), val]; // Append selected
+      newPath = [...categoryPath.slice(0, level), val];
     }
     setCategoryPath(newPath);
 
-    // Sync with React Hook Form
     form.setValue("categoryId", newPath[0] || "", { shouldValidate: true });
     form.setValue(
       "subCategoryId",
@@ -341,7 +375,8 @@ export default function EditProductPage() {
     const formData = new FormData();
 
     Object.entries(values).forEach(([key, value]) => {
-      if (value !== undefined && value !== "" && value !== "none") {
+      // Allow empty strings to be passed so the backend can clear deleted links
+      if (value !== undefined && value !== "none") {
         if (key === "tags") {
           formData.append(key, JSON.stringify(value));
         } else {
@@ -376,7 +411,6 @@ export default function EditProductPage() {
     );
   };
 
-  // 🚨 CRITICAL LOADING CHECK
   if (isLoadingProduct || isLoadingCats || !isFormInitialized) {
     return (
       <div className="flex h-[400px] w-full items-center justify-center flex-col gap-4">
@@ -393,9 +427,7 @@ export default function EditProductPage() {
       onSubmit={form.handleSubmit(onSubmit)}
       className="space-y-8 pb-20 animate-in fade-in duration-500 relative"
     >
-      {/* ==========================================
-          STICKY TOOLBAR
-      ========================================== */}
+      {/* STICKY TOOLBAR */}
       <div className="sticky top-0 z-40 flex items-center justify-between bg-slate-50/90 dark:bg-slate-950/90 backdrop-blur-md py-4 mb-6 border-b border-slate-200 dark:border-slate-800 shadow-sm -mt-4 sm:-mt-6 lg:-mt-8 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-4">
           <Button
@@ -437,7 +469,7 @@ export default function EditProductPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 px-1">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 px-1">
         {/* ==========================================
             LEFT COLUMN (Main Specs)
         ========================================== */}
@@ -498,7 +530,6 @@ export default function EditProductPage() {
                 </div>
               </div>
 
-              {/* 🚨 DEEP CASCADING CATEGORIES UI */}
               <div className="border border-slate-200 dark:border-slate-800 p-5 rounded-xl bg-slate-50 dark:bg-slate-900/50 relative space-y-4">
                 <div className="flex items-center justify-between mb-2">
                   <Label className="text-sm font-semibold">
@@ -524,7 +555,6 @@ export default function EditProductPage() {
                       {levelData.level > 0 && (
                         <CornerDownRight className="h-4 w-4 text-slate-400 mr-2 shrink-0 opacity-70" />
                       )}
-
                       <div className="flex-1">
                         <Select
                           value={levelData.selectedValue}
@@ -562,7 +592,6 @@ export default function EditProductPage() {
                       </div>
                     </div>
                   ))}
-
                   {form.formState.errors.categoryId && (
                     <p className="text-xs text-red-500 font-medium mt-1">
                       {form.formState.errors.categoryId.message}
@@ -734,88 +763,6 @@ export default function EditProductPage() {
             RIGHT COLUMN (Tags, Pricing, Meta)
         ========================================== */}
         <div className="space-y-6">
-          {/* TAGS MANAGEMENT */}
-          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Tags className="h-4 w-4 text-blue-600" />
-                Теги (Группы на главной)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-5 space-y-5">
-              <div className="flex flex-wrap gap-2">
-                {PRESET_TAGS.map((tag) => {
-                  const isSelected = currentTags.includes(tag);
-                  return (
-                    <Badge
-                      key={tag}
-                      variant={isSelected ? "default" : "outline"}
-                      className={`cursor-pointer transition-all border-slate-200 dark:border-slate-700 ${isSelected ? "bg-blue-600 hover:bg-blue-700 text-white border-transparent" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}
-                      onClick={() =>
-                        isSelected ? handleRemoveTag(tag) : handleAddTag(tag)
-                      }
-                    >
-                      {tag}{" "}
-                      {isSelected ? (
-                        <X className="ml-1 h-3 w-3" />
-                      ) : (
-                        <Plus className="ml-1 h-3 w-3 text-slate-400" />
-                      )}
-                    </Badge>
-                  );
-                })}
-              </div>
-
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Свой тег..."
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleAddTag(tagInput);
-                    }
-                  }}
-                  className="text-sm"
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => handleAddTag(tagInput)}
-                >
-                  Добавить
-                </Button>
-              </div>
-
-              {currentTags.filter((t) => !PRESET_TAGS.includes(t)).length >
-                0 && (
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
-                  <span className="text-xs text-slate-500 w-full mb-1 font-medium">
-                    Свои теги:
-                  </span>
-                  {currentTags
-                    .filter((t) => !PRESET_TAGS.includes(t))
-                    .map((tag) => (
-                      <Badge
-                        key={tag}
-                        className="bg-slate-700 hover:bg-slate-800 text-white pr-1.5 flex items-center gap-1 transition-colors"
-                      >
-                        {tag}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTag(tag)}
-                          className="rounded-full hover:bg-slate-500 p-0.5 transition-colors"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {/* STATUS & PRICING */}
           <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
             <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
@@ -906,6 +853,160 @@ export default function EditProductPage() {
                   </p>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* 🚨 NEW: MARKETPLACE LINKS */}
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <ShoppingCart className="h-4 w-4 text-emerald-600" />
+                Ссылки на маркетплейсы
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-5">
+              <div className="grid gap-2">
+                <Label className="text-xs">Яндекс Маркет</Label>
+                <Input
+                  {...form.register("yandexmarketLink")}
+                  placeholder="https://market.yandex.ru/..."
+                />
+                {form.formState.errors.yandexmarketLink && (
+                  <p className="text-[10px] text-red-500">
+                    {form.formState.errors.yandexmarketLink.message}
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-xs">Ozon</Label>
+                <Input
+                  {...form.register("ozonLink")}
+                  placeholder="https://ozon.ru/..."
+                />
+                {form.formState.errors.ozonLink && (
+                  <p className="text-[10px] text-red-500">
+                    {form.formState.errors.ozonLink.message}
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-xs">Wildberries</Label>
+                <Input
+                  {...form.register("wildberriesLink")}
+                  placeholder="https://wildberries.ru/..."
+                />
+                {form.formState.errors.wildberriesLink && (
+                  <p className="text-[10px] text-red-500">
+                    {form.formState.errors.wildberriesLink.message}
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-xs">Avito</Label>
+                <Input
+                  {...form.register("avitoLink")}
+                  placeholder="https://avito.ru/..."
+                />
+                {form.formState.errors.avitoLink && (
+                  <p className="text-[10px] text-red-500">
+                    {form.formState.errors.avitoLink.message}
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-xs">Amazon</Label>
+                <Input
+                  {...form.register("amazonLink")}
+                  placeholder="https://amazon.com/..."
+                />
+                {form.formState.errors.amazonLink && (
+                  <p className="text-[10px] text-red-500">
+                    {form.formState.errors.amazonLink.message}
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* TAGS MANAGEMENT */}
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Tags className="h-4 w-4 text-blue-600" />
+                Теги (Группы на главной)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-5">
+              <div className="flex flex-wrap gap-2">
+                {PRESET_TAGS.map((tag) => {
+                  const isSelected = currentTags.includes(tag);
+                  return (
+                    <Badge
+                      key={tag}
+                      variant={isSelected ? "default" : "outline"}
+                      className={`cursor-pointer transition-all border-slate-200 dark:border-slate-700 ${isSelected ? "bg-blue-600 hover:bg-blue-700 text-white border-transparent" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}
+                      onClick={() =>
+                        isSelected ? handleRemoveTag(tag) : handleAddTag(tag)
+                      }
+                    >
+                      {tag}{" "}
+                      {isSelected ? (
+                        <X className="ml-1 h-3 w-3" />
+                      ) : (
+                        <Plus className="ml-1 h-3 w-3 text-slate-400" />
+                      )}
+                    </Badge>
+                  );
+                })}
+              </div>
+
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Свой тег..."
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddTag(tagInput);
+                    }
+                  }}
+                  className="text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => handleAddTag(tagInput)}
+                >
+                  Добавить
+                </Button>
+              </div>
+
+              {currentTags.filter((t) => !PRESET_TAGS.includes(t)).length >
+                0 && (
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
+                  <span className="text-xs text-slate-500 w-full mb-1 font-medium">
+                    Свои теги:
+                  </span>
+                  {currentTags
+                    .filter((t) => !PRESET_TAGS.includes(t))
+                    .map((tag) => (
+                      <Badge
+                        key={tag}
+                        className="bg-slate-700 hover:bg-slate-800 text-white pr-1.5 flex items-center gap-1 transition-colors"
+                      >
+                        {tag}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTag(tag)}
+                          className="rounded-full hover:bg-slate-500 p-0.5 transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

@@ -9,9 +9,3 @@ export interface ApiResponse<T> {
     totalPages: number;
   };
 }
-
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-}

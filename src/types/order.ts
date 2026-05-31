@@ -17,6 +17,10 @@ export interface OrderItem {
   productName: string;
   quantity: number;
   priceAtTime: string | number;
+  imageUrl?: string;
+  product?: {
+    thumbImage?: string;
+  };
 }
 
 export interface OrderHistory {
@@ -30,11 +34,21 @@ export interface OrderHistory {
   createdAt: string;
 }
 
+// 🚨 NEW: Customer Interface for Admin Panel
+export interface OrderCustomer {
+  id: string;
+  email: string;
+  mobile: string;
+  fullName: string;
+  profilePhoto: string | null;
+}
+
 export interface Order {
   id: string;
+  orderId?: string;
   userId: string;
   status: OrderStatus;
-  paymentMode: PaymentMode;
+  paymentMethod: PaymentMode;
   paymentType: PaymentType;
   deliveryAuthCode: string;
   totalAmount: string | number;
@@ -49,7 +63,8 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   items: OrderItem[];
-  history?: OrderHistory[]; // Optional because list view might only return 1 item
+  history?: OrderHistory[];
+  customer?: OrderCustomer; // 🚨 Added to Order type
 }
 
 export interface PaginatedResponse<T> {

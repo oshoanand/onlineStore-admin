@@ -1,113 +1,172 @@
 "use client";
 
-import React, { createContext, useContext, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { notificationApi } from "@/services/notification";
-import { NotificationItem } from "@/types/notification";
-import { useAppStore } from "@/store/useAppStore";
-import { useSession } from "next-auth/react";
-
-interface NotificationContextType {
-  notifications: NotificationItem[];
-  unreadCount: number;
-  markAllAsRead: () => void;
-  markAsRead: (id: string) => void;
-}
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+  useCallback,
+} from "react";
+import { useRouter } from "next/navigation";
+import { useToast } from "@/hooks/use-toast";
+import { useSocket } from "@/components/providers/SocketProvider";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  NotificationContextType,
+  NotificationItem,
+} from "@/types/notification";
 
 const NotificationContext = createContext<NotificationContextType | undefined>(
   undefined,
 );
 
-export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
+interface NotificationProviderProps {
+  children: ReactNode;
+}
+
+export const NotificationProvider: React.FC<NotificationProviderProps> = ({
   children,
 }) => {
+  const { socket } = useSocket();
   const queryClient = useQueryClient();
-  const { status } = useSession();
-  const setUnreadNotifications = useAppStore(
-    (state) => state.setUnreadNotifications,
-  );
+  const { toast } = useToast();
+  const router = useRouter();
 
-  // Fetch notifications only if the user is authenticated
-  const { data } = useQuery({
-    queryKey: ["notifications"],
-    queryFn: async () => {
-      const response = await notificationApi.getNotifications();
-      return response.data;
-    },
-    enabled: status === "authenticated",
-  });
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
-  const notifications = data?.notifications || [];
-  const unreadCount = data?.unreadCount || 0;
+  // --- Audio Helper ---
+  const playNotificationSound = useCallback(() => {
+    try {
+      const audio = new Audio("/sounds/notification.wav");
+      audio.play().catch((e) => console.log("Audio play blocked", e));
+    } catch (error) {
+      console.error("Audio error:", error);
+    }
+  }, []);
 
-  // Keep your Zustand store in sync with the fetched data
   useEffect(() => {
-    setUnreadNotifications(unreadCount);
-  }, [unreadCount, setUnreadNotifications]);
+    if (!socket) return;
 
-  // Mutation for marking a single notification as read
-  const markAsReadMutation = useMutation({
-    mutationFn: (id: string) => notificationApi.markAsRead(id),
-    onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ["notifications"] });
+    const handleNotification = (payload: any) => {
+      console.log("🔔 Received Admin Notification:", payload);
 
-      // Optimistic Update: instantly make UI feel fast
-      queryClient.setQueryData(["notifications"], (old: any) => {
-        if (!old) return old;
-        return {
-          ...old,
-          notifications: old.notifications.map((n: NotificationItem) =>
-            n.id === id ? { ...n, isRead: true } : n,
-          ),
-          unreadCount: Math.max(0, old.unreadCount - 1),
-        };
-      });
-    },
-  });
+      const { type, data } = payload;
 
-  // Mutation for marking ALL notifications as read
-  const markAllAsReadMutation = useMutation({
-    mutationFn: () => notificationApi.markAllAsRead(),
-    onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ["notifications"] });
+      // 🚨 ANTI-SPAM CHECK: Determine if this is a live event or old history
+      const notifTime = payload.createdAt
+        ? new Date(payload.createdAt).getTime()
+        : Date.now();
+      const isOldMessage = Date.now() - notifTime > 10000; // Older than 10 seconds
 
-      // Optimistic Update: instantly clear the red badge on the bell
-      queryClient.setQueryData(["notifications"], (old: any) => {
-        if (!old) return old;
-        return {
-          ...old,
-          notifications: old.notifications.map((n: NotificationItem) => ({
-            ...n,
-            isRead: true,
-          })),
-          unreadCount: 0,
-        };
-      });
-    },
-  });
+      // Create a safe base item for TypeScript compliance
+      const baseItem = {
+        id: payload.id || Date.now().toString(),
+        isRead: false,
+        createdAt: payload.createdAt || new Date().toISOString(),
+      };
 
-  const markAsRead = (id: string) => {
-    markAsReadMutation.mutate(id);
+      // --- Handle "PARTNER_REQUEST", "SYSTEM", or "MODERATION_UPDATE" ---
+      if (type === "SYSTEM") {
+        const item: NotificationItem = {
+          ...baseItem,
+          type: type as any,
+          title: payload.title || "Уведомление",
+          message: payload.message || payload.body,
+          link: payload.link || data?.url,
+          data: data || {},
+        } as any;
+
+        setNotifications((prev) => [item, ...prev]);
+        setUnreadCount((prev) => prev + 1);
+
+        if (!isOldMessage) {
+          playNotificationSound();
+          toast({
+            title:
+              payload.title ||
+              (type === "SYSTEM" ? "Системное уведомление" : "Уведомление"),
+            description: payload.message || payload.body,
+            duration: 8000,
+            action:
+              payload.link || data?.url
+                ? {
+                    label: "Смотреть",
+                    onClick: () => router.push(payload.link || data?.url),
+                  }
+                : undefined,
+          });
+        }
+      }
+
+      // --- Handle Unknown generic types ---
+      else {
+        const item: NotificationItem = {
+          ...baseItem,
+          ...payload,
+          type: type || "SYSTEM",
+        } as any;
+
+        setNotifications((prev) => [item, ...prev]);
+        setUnreadCount((prev) => prev + 1);
+
+        if (!isOldMessage) {
+          toast({
+            variant: "success",
+            title: payload.title || "Уведомление",
+            description:
+              payload.message || payload.body || "Новое сообщение от системы",
+          });
+        }
+      }
+    };
+
+    // Attach Listener
+    socket.on("notification", handleNotification);
+
+    return () => {
+      socket.off("notification", handleNotification);
+    };
+  }, [socket, toast, router, playNotificationSound, queryClient]);
+
+  // --- Mark Read Logic ---
+  const markAllAsRead = () => {
+    setUnreadCount(0);
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
-  const markAllAsRead = () => {
-    if (unreadCount > 0) {
-      markAllAsReadMutation.mutate();
-    }
+  const markAsRead = (id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => {
+        if (n.id === id && !n.isRead) {
+          // Prevent negative count
+          setUnreadCount((c) => Math.max(0, c - 1));
+          return { ...n, isRead: true };
+        }
+        return n;
+      }),
+    );
   };
 
   return (
     <NotificationContext.Provider
-      value={{ notifications, unreadCount, markAsRead, markAllAsRead }}
+      value={{
+        notifications,
+        unreadCount,
+        markAllAsRead,
+        markAsRead,
+        socket,
+      }}
     >
       {children}
     </NotificationContext.Provider>
   );
 };
 
-export const useNotification = () => {
+export const useNotification = (): NotificationContextType => {
   const context = useContext(NotificationContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error(
       "useNotification must be used within a NotificationProvider",
     );

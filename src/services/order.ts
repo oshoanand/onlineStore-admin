@@ -8,16 +8,38 @@ export const useAdminOrders = (
   limit: number,
   status?: string,
   search?: string,
+  sortBy?: string,
+  sortOrder?: string,
+  startDate?: string,
+  endDate?: string,
 ) => {
   return useQuery({
-    queryKey: ["admin-orders", page, limit, status, search],
+    // Include all variables in the query key so React Query refetches when they change
+    queryKey: [
+      "admin-orders",
+      page,
+      limit,
+      status,
+      search,
+      sortBy,
+      sortOrder,
+      startDate,
+      endDate,
+    ],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
         limit: String(limit),
       });
+
       if (status && status !== "ALL") params.append("status", status);
       if (search) params.append("search", search);
+
+      // Append new sorting and date params
+      if (sortBy) params.append("sortBy", sortBy);
+      if (sortOrder) params.append("sortOrder", sortOrder);
+      if (startDate) params.append("startDate", startDate);
+      if (endDate) params.append("endDate", endDate);
 
       const res = await apiRequest<PaginatedResponse<Order>>({
         method: "GET",
@@ -25,7 +47,7 @@ export const useAdminOrders = (
       });
       return res;
     },
-    placeholderData: (previousData) => previousData, // Keeps old data visible while fetching next page
+    placeholderData: (previousData) => previousData,
   });
 };
 
@@ -37,8 +59,10 @@ export const useOrderDetails = (id: string) => {
       // NOTE: Ensure your backend allows admins to fetch orders without the userId check!
       const res = await apiRequest<{ data: Order }>({
         method: "GET",
-        url: `/orders/${id}`,
+        url: `/orders/admin/${id}`,
       });
+
+      console.log("Fetched order details:", res.data);
       return res.data;
     },
     enabled: !!id,
